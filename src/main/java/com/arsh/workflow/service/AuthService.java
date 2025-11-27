@@ -29,7 +29,6 @@ public class AuthService {
 
 
     public void register(RegisterRequestDto req) {
-
         User user = User.builder()
                 .username(req.getUsername())
                 .password(encoder.encode(req.getPassword()))
