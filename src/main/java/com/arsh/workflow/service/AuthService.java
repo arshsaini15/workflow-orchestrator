@@ -1,7 +1,8 @@
 package com.arsh.workflow.service;
 
 import com.arsh.workflow.dto.*;
-import com.arsh.workflow.model.Role;
+import com.arsh.workflow.enums.Role;
+import com.arsh.workflow.mapper.UserMapper;
 import com.arsh.workflow.model.User;
 import com.arsh.workflow.repository.UserRepository;
 import com.arsh.workflow.util.JwtUtil;
@@ -9,8 +10,6 @@ import org.springframework.security.authentication.*;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.web.bind.annotation.*;
-
 
 @Service
 public class AuthService {
@@ -28,18 +27,19 @@ public class AuthService {
     }
 
 
-    public void register(RegisterRequestDto req) {
-        User user = User.builder()
-                .username(req.getUsername())
-                .password(encoder.encode(req.getPassword()))
-                .role(Role.USER)
-                .build();
+    public AuthResponseDto register(RegisterRequestDto req) {
+        User user = UserMapper.toEntity(req);
+
+        user.setPassword(encoder.encode(req.getPassword()));
+        user.setRole(Role.USER);
 
         repo.save(user);
+
+        return new AuthResponseDto(jwtUtil.generateToken(user.getUsername()));
     }
 
-
     public AuthResponseDto login(LoginRequestDto req) {
+
         Authentication authToken = new UsernamePasswordAuthenticationToken(req.getUsername(), req.getPassword());
         authManager.authenticate(authToken);
 

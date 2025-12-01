@@ -1,13 +1,11 @@
 package com.arsh.workflow.model;
 
+import com.arsh.workflow.enums.TaskStatus;
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
 
 @Entity
-@Getter
-@Setter
 public class Task extends BaseAuditingEntity {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -24,4 +22,50 @@ public class Task extends BaseAuditingEntity {
     @ManyToOne
     @JoinColumn(name = "workflow_id")
     private Workflow workflow;
+
+    public Task() {}
+
+    public Long getId() {
+        return id;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public TaskStatus getStatus() {
+        return status;
+    }
+
+    public User getAssignedTo() {
+        return assignedTo;
+    }
+
+    public Workflow getWorkflow() {
+        return workflow;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public void setStatus(TaskStatus status) {
+        this.status = status;
+    }
+
+    public void setAssignedTo(User assignedTo) {
+        this.assignedTo = assignedTo;
+    }
+
+    void setWorkflowInternal(Workflow workflow) {
+        this.workflow = workflow;
+    }
 }

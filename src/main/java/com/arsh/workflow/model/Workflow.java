@@ -1,5 +1,6 @@
 package com.arsh.workflow.model;
 
+import com.arsh.workflow.enums.WorkflowStatus;
 import jakarta.persistence.*;
 
 import java.util.ArrayList;
@@ -7,6 +8,7 @@ import java.util.List;
 
 @Entity
 public class Workflow extends BaseAuditingEntity {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -16,6 +18,44 @@ public class Workflow extends BaseAuditingEntity {
     @Enumerated(EnumType.STRING)
     private WorkflowStatus status;
 
-    @OneToMany(mappedBy = "workflow", cascade = CascadeType.ALL)
+    @OneToMany(mappedBy = "workflow", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Task> tasks = new ArrayList<>();
+
+    public Workflow() {}
+
+    public Long getId() {
+        return id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public WorkflowStatus getStatus() {
+        return status;
+    }
+
+    public List<Task> getTasks() {
+        return tasks;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public void setStatus(WorkflowStatus status) {
+        this.status = status;
+    }
+
+    public void addTask(Task task) {
+        if (task == null) return;
+        tasks.add(task);
+        task.setWorkflowInternal(this);
+    }
+
+    public void removeTask(Task task) {
+        if (task == null) return;
+        tasks.remove(task);
+        task.setWorkflowInternal(null);
+    }
 }

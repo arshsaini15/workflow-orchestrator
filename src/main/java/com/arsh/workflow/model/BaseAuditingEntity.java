@@ -12,7 +12,7 @@ import org.springframework.data.annotation.LastModifiedBy;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-import java.util.Date;
+import java.time.Instant;
 
 @MappedSuperclass
 @EntityListeners(AuditingEntityListener.class)
@@ -28,11 +28,11 @@ public abstract class BaseAuditingEntity {
     @CreatedDate
     @Temporal(TemporalType.TIMESTAMP)
     @Column(updatable = false)
-    private Date createdAt;
+    private Instant createdAt;
 
     @LastModifiedDate
     @Temporal(TemporalType.TIMESTAMP)
-    private Date updatedAt;
+    private Instant updatedAt;
 
     public String getCreatedBy() {
         return createdBy;
@@ -50,19 +50,19 @@ public abstract class BaseAuditingEntity {
         this.updatedBy = updatedBy;
     }
 
-    public Date getCreatedAt() {
+    public Instant getCreatedAt() {
         return createdAt;
     }
 
-    public void setCreatedAt(Date createdAt) {
+    public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
     }
 
-    public Date getUpdatedAt() {
+    public Instant getUpdatedAt() {
         return updatedAt;
     }
 
-    public void setUpdatedAt(Date updatedAt) {
+    public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
     }
 }

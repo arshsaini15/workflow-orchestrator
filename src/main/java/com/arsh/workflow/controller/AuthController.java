@@ -18,9 +18,8 @@ public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/register")
-    public String register(@RequestBody RegisterRequestDto req) {
-        authService.register(req);
-        return "Registered Successfully";
+    public AuthResponseDto register(@RequestBody RegisterRequestDto req) {
+        return authService.register(req);
     }
 
     @PostMapping("/login")

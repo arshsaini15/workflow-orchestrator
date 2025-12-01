@@ -1,4 +1,4 @@
-package com.arsh.workflow.model;
+package com.arsh.workflow.enums;
 
 public enum WorkflowStatus {
     CREATED,

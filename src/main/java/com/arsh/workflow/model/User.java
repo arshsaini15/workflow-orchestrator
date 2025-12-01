@@ -1,4 +1,5 @@
 package com.arsh.workflow.model;
+import com.arsh.workflow.enums.Role;
 import jakarta.persistence.*;
 import lombok.*;
 

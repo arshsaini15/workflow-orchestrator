@@ -9,4 +9,6 @@ import lombok.Setter;
 @AllArgsConstructor
 public class AuthResponseDto {
     private String token;
+
+    public AuthResponseDto() {}
 }
