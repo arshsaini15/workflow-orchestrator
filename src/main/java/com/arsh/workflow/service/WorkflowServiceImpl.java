@@ -13,9 +13,13 @@ import com.arsh.workflow.mapper.WorkflowMapper;
 import com.arsh.workflow.model.Task;
 import com.arsh.workflow.model.Workflow;
 import com.arsh.workflow.repository.WorkflowRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+
 import org.springframework.stereotype.Service;
 
-import java.util.List;
 
 @Service
 public class WorkflowServiceImpl implements WorkflowService {
@@ -145,10 +149,11 @@ public class WorkflowServiceImpl implements WorkflowService {
     }
 
     @Override
-    public List<WorkflowResponse> getAllWorkflows() {
-        return workflowRepository.findAll()
-                .stream()
-                .map(WorkflowMapper::toResponse)
-                .toList();
+    public Page<WorkflowResponse> getAllWorkflows(int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+
+        Page<Workflow> workflows = workflowRepository.findAll(pageable);
+
+        return workflows.map(WorkflowMapper::toResponse);
     }
 }

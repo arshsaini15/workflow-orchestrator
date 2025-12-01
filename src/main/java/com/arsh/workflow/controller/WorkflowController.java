@@ -5,6 +5,7 @@ import com.arsh.workflow.dto.CreateWorkflowRequest;
 import com.arsh.workflow.dto.TaskResponse;
 import com.arsh.workflow.dto.WorkflowResponse;
 import com.arsh.workflow.service.WorkflowServiceImpl;
+import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -49,9 +50,11 @@ public class WorkflowController {
         return workflowService.completeWorkflow(workflowId);
     }
 
-    @PostMapping("/fetchAll")
-    public List<WorkflowResponse> fetchAllWorkflows() {
-        return workflowService.getAllWorkflows();
+    @GetMapping
+    public Page<WorkflowResponse> getAllWorkflows(@RequestParam(defaultValue = "0") int page,
+                                                  @RequestParam(defaultValue = "10") int size)
+    {
+        return workflowService.getAllWorkflows(page, size);
     }
 
     @DeleteMapping("/{workflowId}/delete/{taskId}")

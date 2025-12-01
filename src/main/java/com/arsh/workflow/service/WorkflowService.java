@@ -4,9 +4,8 @@ import com.arsh.workflow.dto.CreateTaskRequest;
 import com.arsh.workflow.dto.CreateWorkflowRequest;
 import com.arsh.workflow.dto.TaskResponse;
 import com.arsh.workflow.dto.WorkflowResponse;
-import com.arsh.workflow.model.Workflow;
+import org.springframework.data.domain.Page;
 
-import java.util.List;
 
 public interface WorkflowService {
     WorkflowResponse createWorkflow(CreateWorkflowRequest req);
@@ -16,5 +15,5 @@ public interface WorkflowService {
     TaskResponse addTask(Long workflowId, CreateTaskRequest req);
     WorkflowResponse startWorkflow(Long workflowId);
     WorkflowResponse completeWorkflow(Long workflowId);
-    List<WorkflowResponse> getAllWorkflows();
+    Page<WorkflowResponse> getAllWorkflows(int page, int size);
 }
