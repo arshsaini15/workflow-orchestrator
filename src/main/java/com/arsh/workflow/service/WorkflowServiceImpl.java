@@ -1,22 +1,19 @@
 package com.arsh.workflow.service;
 
-import com.arsh.workflow.dto.CreateTaskRequest;
-import com.arsh.workflow.dto.CreateWorkflowRequest;
-import com.arsh.workflow.dto.TaskResponse;
-import com.arsh.workflow.dto.WorkflowResponse;
+import com.arsh.workflow.dto.*;
 import com.arsh.workflow.enums.TaskStatus;
 import com.arsh.workflow.enums.WorkflowStatus;
 import com.arsh.workflow.exception.IllegalWorkflowOperationException;
 import com.arsh.workflow.exception.WorkflowNotFoundException;
+import com.arsh.workflow.mapper.PageMapper;
 import com.arsh.workflow.mapper.TaskMapper;
 import com.arsh.workflow.mapper.WorkflowMapper;
 import com.arsh.workflow.model.Task;
 import com.arsh.workflow.model.Workflow;
+import com.arsh.workflow.repository.TaskRepository;
 import com.arsh.workflow.repository.WorkflowRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 
 import org.springframework.stereotype.Service;
 
@@ -25,9 +22,11 @@ import org.springframework.stereotype.Service;
 public class WorkflowServiceImpl implements WorkflowService {
 
     private final WorkflowRepository workflowRepository;
+    private final TaskRepository taskRepository;
 
-    public WorkflowServiceImpl(WorkflowRepository workflowRepository) {
+    public WorkflowServiceImpl(WorkflowRepository workflowRepository, TaskRepository taskRepository) {
         this.workflowRepository = workflowRepository;
+        this.taskRepository = taskRepository;
     }
 
     @Override
@@ -149,11 +148,24 @@ public class WorkflowServiceImpl implements WorkflowService {
     }
 
     @Override
-    public Page<WorkflowResponse> getAllWorkflows(int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+    public PaginatedResponse<WorkflowResponse> getAllWorkflows(String status,
+                                                               String createdBy,
+                                                               String search,
+                                                               Pageable pageable
+    ) {
 
-        Page<Workflow> workflows = workflowRepository.findAll(pageable);
+        Page<WorkflowResponse> page = workflowRepository.findAll(pageable)
+                .map(WorkflowMapper::toResponse);
 
-        return workflows.map(WorkflowMapper::toResponse);
+        return PageMapper.toResponse(page);
+
+    }
+
+    @Override
+    public PaginatedResponse<TaskResponse> getTasksForWorkflow(Long workflowId, Pageable pageable) {
+        Page<TaskResponse> page = taskRepository.findByWorkflow_Id(workflowId, pageable)
+                .map(TaskMapper::toResponse);
+
+        return PageMapper.toResponse(page);
     }
 }

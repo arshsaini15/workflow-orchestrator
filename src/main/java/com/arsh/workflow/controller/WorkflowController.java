@@ -1,14 +1,10 @@
 package com.arsh.workflow.controller;
 
-import com.arsh.workflow.dto.CreateTaskRequest;
-import com.arsh.workflow.dto.CreateWorkflowRequest;
-import com.arsh.workflow.dto.TaskResponse;
-import com.arsh.workflow.dto.WorkflowResponse;
+import com.arsh.workflow.dto.*;
 import com.arsh.workflow.service.WorkflowServiceImpl;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/workflow")
@@ -51,14 +47,23 @@ public class WorkflowController {
     }
 
     @GetMapping
-    public Page<WorkflowResponse> getAllWorkflows(@RequestParam(defaultValue = "0") int page,
-                                                  @RequestParam(defaultValue = "10") int size)
-    {
-        return workflowService.getAllWorkflows(page, size);
+    public PaginatedResponse<WorkflowResponse> getAllWorkflows(@RequestParam(required = false) String status,
+                                                               @RequestParam(required = false) String createdBy,
+                                                               @RequestParam(required = false) String search,
+                                                               Pageable pageable) {
+        return workflowService.getAllWorkflows(status, createdBy, search, pageable);
     }
 
     @DeleteMapping("/{workflowId}/delete/{taskId}")
     public TaskResponse deleteTask(@PathVariable Long workflowId, @PathVariable Long taskId) {
         return workflowService.deleteTask(workflowId, taskId);
+    }
+
+    @GetMapping("/{workflowId}/tasks")
+    public PaginatedResponse<TaskResponse> getTasksForWorkflow(
+            @PathVariable Long workflowId,
+            Pageable pageable
+    ) {
+        return workflowService.getTasksForWorkflow(workflowId, pageable);
     }
 }

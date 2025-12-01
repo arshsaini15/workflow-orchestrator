@@ -1,10 +1,8 @@
 package com.arsh.workflow.service;
 
-import com.arsh.workflow.dto.CreateTaskRequest;
-import com.arsh.workflow.dto.CreateWorkflowRequest;
-import com.arsh.workflow.dto.TaskResponse;
-import com.arsh.workflow.dto.WorkflowResponse;
+import com.arsh.workflow.dto.*;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 
 public interface WorkflowService {
@@ -15,5 +13,12 @@ public interface WorkflowService {
     TaskResponse addTask(Long workflowId, CreateTaskRequest req);
     WorkflowResponse startWorkflow(Long workflowId);
     WorkflowResponse completeWorkflow(Long workflowId);
-    Page<WorkflowResponse> getAllWorkflows(int page, int size);
+
+    PaginatedResponse<WorkflowResponse> getAllWorkflows(String status,
+                                           String createdBy,
+                                           String search,
+                                           Pageable pageable);
+
+    PaginatedResponse<TaskResponse> getTasksForWorkflow(Long workflowId, Pageable pageable);
+
 }
