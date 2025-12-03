@@ -12,6 +12,7 @@ import com.arsh.workflow.model.Task;
 import com.arsh.workflow.model.Workflow;
 import com.arsh.workflow.repository.TaskRepository;
 import com.arsh.workflow.repository.WorkflowRepository;
+import com.arsh.workflow.service.WorkflowExecutorService;
 import com.arsh.workflow.service.WorkflowService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -24,10 +25,12 @@ public class WorkflowServiceImpl implements WorkflowService {
 
     private final WorkflowRepository workflowRepository;
     private final TaskRepository taskRepository;
+    private final WorkflowExecutorService workflowExecutorService;
 
-    public WorkflowServiceImpl(WorkflowRepository workflowRepository, TaskRepository taskRepository) {
+    public WorkflowServiceImpl(WorkflowRepository workflowRepository, TaskRepository taskRepository, WorkflowExecutorService workflowExecutorService) {
         this.workflowRepository = workflowRepository;
         this.taskRepository = taskRepository;
+        this.workflowExecutorService = workflowExecutorService;
     }
 
     @Override
@@ -100,8 +103,11 @@ public class WorkflowServiceImpl implements WorkflowService {
         task.setStatus(TaskStatus.PENDING);
         task.setAssignedTo(null);
         workflow.addTask(task);
-
         workflowRepository.save(workflow);
+
+        if (workflow.getStatus() == WorkflowStatus.RUNNING) {
+            workflowExecutorService.executeWorkflow(workflowId);
+        }
 
         return TaskMapper.toResponse(task);
     }
@@ -110,15 +116,7 @@ public class WorkflowServiceImpl implements WorkflowService {
     public WorkflowResponse startWorkflow(Long workflowId) {
 
         Workflow workflow = workflowRepository.findById(workflowId)
-                .orElseThrow(() -> new WorkflowNotFoundException(
-                        "Workflow with id " + workflowId + " not found."
-                ));
-
-        if (workflow.getTasks().isEmpty()) {
-            throw new IllegalWorkflowOperationException(
-                    "Workflow with id " + workflowId + " has no tasks!"
-            );
-        }
+                .orElseThrow(() ->  new WorkflowNotFoundException("Workflow with id " + workflowId + " not found!"));
 
         workflow.getTasks().forEach(t -> {
             if (t.getStatus() == TaskStatus.PENDING) {
@@ -127,7 +125,9 @@ public class WorkflowServiceImpl implements WorkflowService {
         });
 
         workflow.setStatus(WorkflowStatus.READY);
-        workflow = workflowRepository.save(workflow);
+        workflowRepository.save(workflow);
+
+        workflowExecutorService.executeWorkflow(workflowId);
 
         return WorkflowMapper.toResponse(workflow);
     }
@@ -192,7 +192,7 @@ public class WorkflowServiceImpl implements WorkflowService {
 
     @Override
     public PaginatedResponse<TaskResponse> getTasksForWorkflow(Long workflowId, Pageable pageable) {
-        Page<TaskResponse> page = taskRepository.findByWorkflow_Id(workflowId, pageable)
+        Page<TaskResponse> page = taskRepository.findByWorkflowId(workflowId, pageable)
                 .map(TaskMapper::toResponse);
 
         return PageMapper.toResponse(page);

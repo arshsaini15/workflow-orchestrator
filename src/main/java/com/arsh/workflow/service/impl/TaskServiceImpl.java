@@ -59,6 +59,7 @@ public class TaskServiceImpl implements TaskService {
                 .orElseThrow(() -> new TaskNotFoundException("Task with id " + taskId + " not found"));
 
         task.setStatus(status);
+        taskRepository.save(task);
 
         Workflow workflow = task.getWorkflow();
 
@@ -75,18 +76,19 @@ public class TaskServiceImpl implements TaskService {
             boolean anyFailed = tasks.stream()
                     .anyMatch(t -> t.getStatus() == TaskStatus.FAILED);
 
+            // 2. Compute new workflow status
             if (allCompleted) {
                 workflow.setStatus(WorkflowStatus.COMPLETED);
-            }
-            else if (anyFailed) {
+            } else if (anyFailed) {
                 workflow.setStatus(WorkflowStatus.FAILED);
-            }
-            else if (anyInProgress) {
+            } else if (anyInProgress) {
                 workflow.setStatus(WorkflowStatus.RUNNING);
-            }
-            else {
+            } else {
                 workflow.setStatus(WorkflowStatus.READY);
             }
+
+            // 3. MUST SAVE THE WORKFLOW HERE
+            workflowRepository.save(workflow);
         }
 
         return TaskMapper.toResponse(task);
@@ -101,4 +103,13 @@ public class TaskServiceImpl implements TaskService {
 
         return TaskMapper.toResponse(task);
     }
+
+    @Override
+    public Long getWorkflowId(Long taskId) {
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new RuntimeException("Task not found"));
+
+        return task.getWorkflow().getId();
+    }
+
 }
