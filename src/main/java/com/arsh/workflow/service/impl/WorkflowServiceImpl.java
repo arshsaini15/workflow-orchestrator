@@ -1,4 +1,4 @@
-package com.arsh.workflow.service;
+package com.arsh.workflow.service.impl;
 
 import com.arsh.workflow.dto.*;
 import com.arsh.workflow.enums.TaskStatus;
@@ -12,6 +12,7 @@ import com.arsh.workflow.model.Task;
 import com.arsh.workflow.model.Workflow;
 import com.arsh.workflow.repository.TaskRepository;
 import com.arsh.workflow.repository.WorkflowRepository;
+import com.arsh.workflow.service.WorkflowService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -96,7 +97,7 @@ public class WorkflowServiceImpl implements WorkflowService {
 
         Task task = TaskMapper.toEntity(req);
 
-        task.setStatus(TaskStatus.TODO);
+        task.setStatus(TaskStatus.PENDING);
         task.setAssignedTo(null);
         workflow.addTask(task);
 
@@ -119,11 +120,18 @@ public class WorkflowServiceImpl implements WorkflowService {
             );
         }
 
-        workflow.setStatus(WorkflowStatus.ACTIVE);
+        workflow.getTasks().forEach(t -> {
+            if (t.getStatus() == TaskStatus.PENDING) {
+                t.setStatus(TaskStatus.READY);
+            }
+        });
+
+        workflow.setStatus(WorkflowStatus.READY);
         workflow = workflowRepository.save(workflow);
 
         return WorkflowMapper.toResponse(workflow);
     }
+
 
     @Override
     public WorkflowResponse completeWorkflow(Long workflowId) {
@@ -133,7 +141,7 @@ public class WorkflowServiceImpl implements WorkflowService {
                 ));
 
         for (Task task : workflow.getTasks()) {
-            if (task.getStatus() != TaskStatus.DONE) {
+            if (task.getStatus() != TaskStatus.COMPLETED) {
                 throw new IllegalWorkflowOperationException(
                         "Cannot complete workflow. Task with id " + task.getId()
                                 + " is not DONE. Status: " + task.getStatus()
@@ -148,18 +156,39 @@ public class WorkflowServiceImpl implements WorkflowService {
     }
 
     @Override
-    public PaginatedResponse<WorkflowResponse> getAllWorkflows(String status,
-                                                               String createdBy,
-                                                               String search,
-                                                               Pageable pageable
+    public PaginatedResponse<WorkflowResponse> getAllWorkflows(
+            String status,
+            String createdBy,
+            String search,
+            Pageable pageable
     ) {
 
-        Page<WorkflowResponse> page = workflowRepository.findAll(pageable)
-                .map(WorkflowMapper::toResponse);
+        Page<Workflow> page;
 
-        return PageMapper.toResponse(page);
+        if (status != null && !status.isBlank()) {
+            WorkflowStatus workflowStatus;
+            try {
+                workflowStatus = WorkflowStatus.valueOf(status.toUpperCase());
+            } catch (IllegalArgumentException ex) {
+                throw new IllegalArgumentException("Invalid workflow status: " + status);
+            }
+            page = workflowRepository.findByStatus(workflowStatus, pageable);
+        }
+        else if (createdBy != null && !createdBy.isBlank()) {
+            page = workflowRepository.findByCreatedBy(createdBy, pageable);
+        }
+        else if (search != null && !search.isBlank()) {
+            page = workflowRepository.findByNameContainingIgnoreCase(search, pageable);
+        }
+        else {
+            page = workflowRepository.findAll(pageable);
+        }
 
+        Page<WorkflowResponse> mapped = page.map(WorkflowMapper::toResponse);
+
+        return PageMapper.toResponse(mapped);
     }
+
 
     @Override
     public PaginatedResponse<TaskResponse> getTasksForWorkflow(Long workflowId, Pageable pageable) {

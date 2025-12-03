@@ -1,4 +1,4 @@
-package com.arsh.workflow.service;
+package com.arsh.workflow.service.impl;
 
 import com.arsh.workflow.dto.TaskResponse;
 import com.arsh.workflow.enums.TaskStatus;
@@ -11,12 +11,12 @@ import com.arsh.workflow.model.Workflow;
 import com.arsh.workflow.repository.TaskRepository;
 import com.arsh.workflow.repository.UserRepository;
 import com.arsh.workflow.repository.WorkflowRepository;
+import com.arsh.workflow.service.TaskService;
 import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.logging.Logger;
 
 @Service
 @Slf4j
@@ -54,32 +54,38 @@ public class TaskServiceImpl implements TaskService {
     @Override
     @Transactional
     public TaskResponse changeStatus(Long taskId, TaskStatus status) {
+
         Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new TaskNotFoundException("Task with id " + taskId + " not found"));
 
         task.setStatus(status);
 
         Workflow workflow = task.getWorkflow();
-        log.info("workflow: {}", workflow);
 
         if (workflow != null) {
+
             List<Task> tasks = workflow.getTasks();
 
-            boolean allDone = tasks.stream()
-                    .allMatch(t -> t.getStatus() == TaskStatus.DONE);
+            boolean allCompleted = tasks.stream()
+                    .allMatch(t -> t.getStatus() == TaskStatus.COMPLETED);
 
             boolean anyInProgress = tasks.stream()
                     .anyMatch(t -> t.getStatus() == TaskStatus.IN_PROGRESS);
 
-            log.info("allDone: {}", allDone);
-            log.info("anyInProgress: {}", anyInProgress);
+            boolean anyFailed = tasks.stream()
+                    .anyMatch(t -> t.getStatus() == TaskStatus.FAILED);
 
-            if (allDone) {
+            if (allCompleted) {
                 workflow.setStatus(WorkflowStatus.COMPLETED);
-            } else if (anyInProgress) {
-                workflow.setStatus(WorkflowStatus.ACTIVE);
-            } else {
-                workflow.setStatus(WorkflowStatus.CREATED);
+            }
+            else if (anyFailed) {
+                workflow.setStatus(WorkflowStatus.FAILED);
+            }
+            else if (anyInProgress) {
+                workflow.setStatus(WorkflowStatus.RUNNING);
+            }
+            else {
+                workflow.setStatus(WorkflowStatus.READY);
             }
         }
 
@@ -88,6 +94,7 @@ public class TaskServiceImpl implements TaskService {
 
         return TaskMapper.toResponse(task);
     }
+
 
 
     @Override
