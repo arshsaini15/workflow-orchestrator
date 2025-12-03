@@ -89,9 +89,6 @@ public class TaskServiceImpl implements TaskService {
             }
         }
 
-        taskRepository.save(task);
-        workflowRepository.save(workflow);
-
         return TaskMapper.toResponse(task);
     }
 

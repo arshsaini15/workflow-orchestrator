@@ -6,10 +6,10 @@ import com.arsh.workflow.exception.WorkflowNotFoundException;
 import com.arsh.workflow.model.Workflow;
 import com.arsh.workflow.repository.WorkflowRepository;
 import com.arsh.workflow.service.WorkflowExecutorService;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 @Service
 public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
@@ -18,8 +18,11 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
     private final TaskServiceImpl taskService;
     private final WorkflowRepository workflowRepository;
 
-    public WorkflowExecutorServiceImpl(TaskServiceImpl taskService, WorkflowRepository workflowRepository) {
-        this.executorService = Executors.newFixedThreadPool(10);  // 10 parallel tasks
+    public WorkflowExecutorServiceImpl(TaskServiceImpl taskService,
+                                       WorkflowRepository workflowRepository,
+                                       @Qualifier("workflowExecutorPool") ExecutorService executorService
+    ) {
+        this.executorService = executorService;
         this.taskService = taskService;
         this.workflowRepository = workflowRepository;
     }
