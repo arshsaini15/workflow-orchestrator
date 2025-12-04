@@ -1,6 +1,8 @@
 package com.arsh.workflow.controller;
 
 import com.arsh.workflow.dto.*;
+import com.arsh.workflow.enums.WorkflowStatus;
+import com.arsh.workflow.model.Task;
 import com.arsh.workflow.service.impl.WorkflowServiceImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.web.bind.annotation.*;
@@ -31,8 +33,8 @@ public class WorkflowController {
     }
 
     @PostMapping("/addTask/{workflowId}")
-    public void addTaskToWorkflow(@PathVariable Long workflowId, @RequestBody CreateTaskRequest req) {
-        workflowService.addTask(workflowId, req);
+    public TaskResponse addTaskToWorkflow(@PathVariable Long workflowId, @RequestBody CreateTaskRequest req) {
+        return workflowService.addTask(workflowId, req);
     }
 
     @PostMapping("/start/{workflowId}")
@@ -46,10 +48,12 @@ public class WorkflowController {
     }
 
     @GetMapping
-    public PaginatedResponse<WorkflowResponse> getAllWorkflows(@RequestParam(required = false) String status,
-                                                               @RequestParam(required = false) String createdBy,
-                                                               @RequestParam(required = false) String search,
-                                                               Pageable pageable) {
+    public PaginatedResponse<WorkflowResponse> getAllWorkflows(
+            @RequestParam(required = false) WorkflowStatus status,
+            @RequestParam(required = false) String createdBy,
+            @RequestParam(required = false) String search,
+            Pageable pageable
+    ){
         return workflowService.getAllWorkflows(status, createdBy, search, pageable);
     }
 

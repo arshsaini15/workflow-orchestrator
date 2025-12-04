@@ -14,6 +14,7 @@ import com.arsh.workflow.repository.TaskRepository;
 import com.arsh.workflow.repository.WorkflowRepository;
 import com.arsh.workflow.service.WorkflowExecutorService;
 import com.arsh.workflow.service.WorkflowService;
+import com.arsh.workflow.util.WorkflowSpecifications;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -89,7 +90,6 @@ public class WorkflowServiceImpl implements WorkflowService {
         return res;
     }
 
-
     @Override
     public TaskResponse addTask(Long workflowId, CreateTaskRequest req) {
 
@@ -132,7 +132,6 @@ public class WorkflowServiceImpl implements WorkflowService {
         return WorkflowMapper.toResponse(workflow);
     }
 
-
     @Override
     public WorkflowResponse completeWorkflow(Long workflowId) {
         Workflow workflow = workflowRepository.findById(workflowId)
@@ -155,34 +154,17 @@ public class WorkflowServiceImpl implements WorkflowService {
         return WorkflowMapper.toResponse(workflow);
     }
 
+
     @Override
     public PaginatedResponse<WorkflowResponse> getAllWorkflows(
-            String status,
+            WorkflowStatus status,
             String createdBy,
             String search,
             Pageable pageable
     ) {
+        var spec = WorkflowSpecifications.filter(status, createdBy, search);
 
-        Page<Workflow> page;
-
-        if (status != null && !status.isBlank()) {
-            WorkflowStatus workflowStatus;
-            try {
-                workflowStatus = WorkflowStatus.valueOf(status.toUpperCase());
-            } catch (IllegalArgumentException ex) {
-                throw new IllegalArgumentException("Invalid workflow status: " + status);
-            }
-            page = workflowRepository.findByStatus(workflowStatus, pageable);
-        }
-        else if (createdBy != null && !createdBy.isBlank()) {
-            page = workflowRepository.findByCreatedBy(createdBy, pageable);
-        }
-        else if (search != null && !search.isBlank()) {
-            page = workflowRepository.findByNameContainingIgnoreCase(search, pageable);
-        }
-        else {
-            page = workflowRepository.findAll(pageable);
-        }
+        Page<Workflow> page = workflowRepository.findAll(spec, pageable);
 
         Page<WorkflowResponse> mapped = page.map(WorkflowMapper::toResponse);
 

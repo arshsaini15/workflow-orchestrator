@@ -1,6 +1,7 @@
 package com.arsh.workflow.service;
 
 import com.arsh.workflow.dto.*;
+import com.arsh.workflow.enums.WorkflowStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -14,10 +15,13 @@ public interface WorkflowService {
     WorkflowResponse startWorkflow(Long workflowId);
     WorkflowResponse completeWorkflow(Long workflowId);
 
-    PaginatedResponse<WorkflowResponse> getAllWorkflows(String status,
-                                           String createdBy,
-                                           String search,
-                                           Pageable pageable);
+
+    PaginatedResponse<WorkflowResponse> getAllWorkflows(
+            WorkflowStatus status,
+            String createdBy,
+            String search,
+            Pageable pageable
+    );
 
     PaginatedResponse<TaskResponse> getTasksForWorkflow(Long workflowId, Pageable pageable);
 
