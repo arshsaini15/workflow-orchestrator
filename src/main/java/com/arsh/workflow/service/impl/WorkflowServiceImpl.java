@@ -14,6 +14,7 @@ import com.arsh.workflow.repository.TaskRepository;
 import com.arsh.workflow.repository.WorkflowRepository;
 import com.arsh.workflow.service.WorkflowExecutorService;
 import com.arsh.workflow.service.WorkflowService;
+import com.arsh.workflow.util.TaskSpecifications;
 import com.arsh.workflow.util.WorkflowSpecifications;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -154,7 +155,6 @@ public class WorkflowServiceImpl implements WorkflowService {
         return WorkflowMapper.toResponse(workflow);
     }
 
-
     @Override
     public PaginatedResponse<WorkflowResponse> getAllWorkflows(
             WorkflowStatus status,
@@ -171,12 +171,21 @@ public class WorkflowServiceImpl implements WorkflowService {
         return PageMapper.toResponse(mapped);
     }
 
-
     @Override
-    public PaginatedResponse<TaskResponse> getTasksForWorkflow(Long workflowId, Pageable pageable) {
-        Page<TaskResponse> page = taskRepository.findByWorkflowId(workflowId, pageable)
-                .map(TaskMapper::toResponse);
+    public PaginatedResponse<TaskResponse> getTasksForWorkflow(
+            Long workflowId,
+            TaskStatus status,
+            String search,
+            Pageable pageable
+    ) {
+        var spec = TaskSpecifications.filter(status, search)
+                .and((root, query, cb) ->
+                        cb.equal(root.get("workflow").get("id"), workflowId)
+                );
 
-        return PageMapper.toResponse(page);
+        var page = taskRepository.findAll(spec, pageable);
+        var mapped = page.map(TaskMapper::toResponse);
+
+        return PageMapper.toResponse(mapped);
     }
 }
