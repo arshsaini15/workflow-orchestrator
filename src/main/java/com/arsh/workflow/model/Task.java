@@ -3,6 +3,8 @@ package com.arsh.workflow.model;
 import com.arsh.workflow.enums.TaskStatus;
 import jakarta.persistence.*;
 
+import java.util.List;
+
 @Entity
 public class Task extends BaseAuditingEntity {
 
@@ -22,6 +24,19 @@ public class Task extends BaseAuditingEntity {
     @ManyToOne
     @JoinColumn(name = "workflow_id")
     private Workflow workflow;
+
+
+    @ManyToMany
+    @JoinTable(name = "task_dependencies")
+    private List<Task> dependsOn;
+
+    public List<Task> getDependsOn() {
+        return dependsOn;
+    }
+
+    public void setDependsOn(List<Task> dependsOn) {
+        this.dependsOn = dependsOn;
+    }
 
     public Task() {}
 

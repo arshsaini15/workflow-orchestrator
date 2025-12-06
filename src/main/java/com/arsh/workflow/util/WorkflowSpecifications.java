@@ -12,7 +12,7 @@ public class WorkflowSpecifications {
 
     public static Specification<Workflow> filter(
             WorkflowStatus status,
-            String createdBy,
+            String username,
             String search
     ) {
         return (root, query, cb) -> {
@@ -23,8 +23,8 @@ public class WorkflowSpecifications {
                 predicates.add(cb.equal(root.get("status"), status));
             }
 
-            if (createdBy != null && !createdBy.isBlank()) {
-                predicates.add(cb.equal(root.get("createdBy"), createdBy));
+            if (username != null && !username.isBlank()) {
+                predicates.add(cb.equal(root.get("name"), username));
             }
 
             if (search != null && !search.isBlank()) {

@@ -14,4 +14,6 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
     Page<Task> findByWorkflowId(Long workflowId, Pageable pageable);
     List<Task> findByWorkflowIdAndStatus(Long workflowId, TaskStatus status);
     List<Task> findByWorkflowId(Long workflowId);
+
+    List<Task> findByWorkflowIdAndStatusIn(Long workflowId, List<TaskStatus> pending);
 }
