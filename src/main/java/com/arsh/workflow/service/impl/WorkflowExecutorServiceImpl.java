@@ -7,10 +7,12 @@ import com.arsh.workflow.model.Workflow;
 import com.arsh.workflow.repository.TaskRepository;
 import com.arsh.workflow.repository.WorkflowRepository;
 import com.arsh.workflow.service.WorkflowExecutorService;
+import com.arsh.workflow.util.RedisDistributedLock;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
@@ -24,23 +26,31 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
     private final TaskServiceImpl taskService;
     private final TaskRepository taskRepository;
     private final WorkflowRepository workflowRepository;
+    private final RedisDistributedLock redisDistributedLock;
 
     private final int maxRetries = 3;
     private final long baseBackoffMs = 500L;
 
+    // Lock tuning
+    private static final Duration LOCK_TTL = Duration.ofSeconds(30);
+    private static final long LOCK_WAIT_MS = 2000L;
+    private static final long LOCK_RETRY_MS = 100L;
+
     public WorkflowExecutorServiceImpl(TaskServiceImpl taskService,
                                        TaskRepository taskRepository,
                                        WorkflowRepository workflowRepository,
+                                       RedisDistributedLock redisDistributedLock,
                                        @Qualifier("workflowExecutorPool") ExecutorService executorService) {
         this.executorService = executorService;
         this.taskService = taskService;
         this.taskRepository = taskRepository;
         this.workflowRepository = workflowRepository;
+        this.redisDistributedLock = redisDistributedLock;
     }
-
 
     @Override
     public void executeWorkflow(Long workflowId) {
+        // Try to mark workflow RUNNING
         try {
             Optional<Workflow> maybeWf = workflowRepository.findById(workflowId);
             if (maybeWf.isPresent()) {
@@ -54,7 +64,9 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
             log.warn("Unable to mark workflow {} RUNNING: {}", workflowId, e.toString());
         }
 
-        List<Task> readyTasks = taskRepository.findByWorkflowIdAndStatus(workflowId, TaskStatus.READY);
+        // Only schedule tasks that are READY (DAG logic already handled elsewhere)
+        List<Task> readyTasks =
+                taskRepository.findByWorkflowIdAndStatus(workflowId, TaskStatus.READY);
 
         if (readyTasks == null || readyTasks.isEmpty()) {
             log.debug("No READY tasks found for workflow {}", workflowId);
@@ -63,51 +75,56 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
 
         for (Task t : readyTasks) {
             Long taskId = t.getId();
-            executorService.submit(() -> runTask(taskId));
+            executorService.submit(() -> runTaskWithLock(taskId));
         }
     }
 
     @Override
     public void runTask(Long taskId) {
-        runTaskWithRetries(taskId);
+        // Public entry goes through lock as well
+        runTaskWithLock(taskId);
+    }
+
+    /**
+     * Core execution gate: Redis lock → retries → business logic
+     */
+    private void runTaskWithLock(Long taskId) {
+        String lockKey = "task:lock:" + taskId;
+        String token = null;
+
+        try {
+            token = redisDistributedLock.lockBlocking(
+                    lockKey,
+                    LOCK_TTL,
+                    LOCK_WAIT_MS,
+                    LOCK_RETRY_MS
+            );
+
+            if (token == null) {
+                log.info("Task {}: could not acquire lock (likely running elsewhere). Skipping.", taskId);
+                return;
+            }
+
+            // Inside lock → safe across nodes
+            runTaskWithRetries(taskId);
+
+        } catch (Exception e) {
+            log.error("Task {}: error during execution with lock", taskId, e);
+        } finally {
+            if (token != null) {
+                boolean released = redisDistributedLock.releaseLock(lockKey, token);
+                if (!released) {
+                    log.warn("Task {}: Redis lock {} not released (expired or stolen).", taskId, lockKey);
+                }
+            }
+        }
     }
 
     @Override
     public void triggerNextTasks(Long workflowId) {
-        List<Task> pendingTasks = taskRepository.findByWorkflowIdAndStatus(workflowId, TaskStatus.PENDING);
-
-        if (pendingTasks == null || pendingTasks.isEmpty()) {
-            log.debug("No PENDING tasks found for workflow {}", workflowId);
-            evaluateWorkflowCompletion(workflowId);
-            return;
-        }
-
-        for (Task task : pendingTasks) {
-            List<Task> deps = task.getDependsOn();
-            boolean allDepsCompleted = true;
-
-            if (deps != null && !deps.isEmpty()) {
-                for (Task dep : deps) {
-                    Optional<Task> maybeDep = taskRepository.findById(dep.getId());
-                    if (maybeDep.isEmpty() || maybeDep.get().getStatus() != TaskStatus.COMPLETED) {
-                        allDepsCompleted = false;
-                        break;
-                    }
-                }
-            }
-
-            if (allDepsCompleted) {
-                try {
-                    task.setStatus(TaskStatus.READY);
-                    taskRepository.save(task);
-                    log.info("Task {} promoted to READY (workflow {})", task.getId(), workflowId);
-                    executorService.submit(() -> runTask(task.getId()));
-                } catch (Exception e) {
-                    log.error("Failed to promote/schedule task {}: {}", task.getId(), e.toString());
-                }
-            }
-        }
-        evaluateWorkflowCompletion(workflowId);
+        // ❌ NO DAG logic here anymore.
+        // ✅ Just rescan this workflow for READY tasks and schedule them.
+        executeWorkflow(workflowId);
     }
 
     private void runTaskWithRetries(Long taskId) {
@@ -144,6 +161,7 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
 
         Task task = maybeTask.get();
 
+        // DB-level idempotency check
         if (task.getStatus() == TaskStatus.COMPLETED) {
             log.info("Task {} already COMPLETED, skipping.", taskId);
             return;
@@ -154,13 +172,16 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
             return;
         }
 
+        // Mark IN_PROGRESS via TaskService (also updates workflow status)
         taskService.changeStatus(taskId, TaskStatus.IN_PROGRESS);
 
         try {
             performTaskBusinessLogic(task);
 
+            // Mark COMPLETED and unlock children (DAG logic in TaskServiceImpl)
             taskService.changeStatus(taskId, TaskStatus.COMPLETED);
 
+            // After children potentially moved to READY, schedule them
             Long workflowId = taskService.getWorkflowId(taskId);
             triggerNextTasks(workflowId);
 
@@ -203,9 +224,14 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
 
     private void evaluateWorkflowCompletion(Long workflowId) {
         try {
-            List<Task> pendingOrReady = taskRepository.findByWorkflowIdAndStatusIn(workflowId,
-                    List.of(TaskStatus.PENDING, TaskStatus.READY));
+            List<Task> pendingOrReady = taskRepository.findByWorkflowIdAndStatusIn(
+                    workflowId,
+                    List.of(TaskStatus.PENDING, TaskStatus.READY)
+            );
 
+            // NOTE: this method is now less important; real workflow status is mostly
+            // driven by TaskServiceImpl.changeStatus. You can later improve this to also
+            // check IN_PROGRESS / FAILED explicitly.
             if (pendingOrReady == null || pendingOrReady.isEmpty()) {
                 Optional<Workflow> maybeWf = workflowRepository.findById(workflowId);
                 if (maybeWf.isPresent()) {

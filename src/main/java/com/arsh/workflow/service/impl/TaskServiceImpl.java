@@ -34,7 +34,6 @@ public class TaskServiceImpl implements TaskService {
         this.workflowRepository = workflowRepository;
     }
 
-
     @Override
     public TaskResponse assignTask(Long taskId, Long userId) {
         Task task = taskRepository.findById(taskId)
@@ -47,24 +46,25 @@ public class TaskServiceImpl implements TaskService {
         task.setStatus(TaskStatus.IN_PROGRESS);
 
         task = taskRepository.save(task);
-
         return TaskMapper.toResponse(task);
     }
 
     @Override
     @Transactional
     public TaskResponse changeStatus(Long taskId, TaskStatus status) {
-
         Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new TaskNotFoundException("Task with id " + taskId + " not found"));
 
         task.setStatus(status);
         taskRepository.save(task);
 
+        // ✅ DAG propagation: if this task just COMPLETED, check its dependents
+        if (status == TaskStatus.COMPLETED) {
+            activateDependentsIfReady(task);
+        }
+
         Workflow workflow = task.getWorkflow();
-
         if (workflow != null) {
-
             List<Task> tasks = workflow.getTasks();
 
             boolean allCompleted = tasks.stream()
@@ -76,7 +76,6 @@ public class TaskServiceImpl implements TaskService {
             boolean anyFailed = tasks.stream()
                     .anyMatch(t -> t.getStatus() == TaskStatus.FAILED);
 
-            // 2. Compute new workflow status
             if (allCompleted) {
                 workflow.setStatus(WorkflowStatus.COMPLETED);
             } else if (anyFailed) {
@@ -87,13 +86,34 @@ public class TaskServiceImpl implements TaskService {
                 workflow.setStatus(WorkflowStatus.READY);
             }
 
-            // 3. MUST SAVE THE WORKFLOW HERE
             workflowRepository.save(workflow);
         }
 
         return TaskMapper.toResponse(task);
     }
 
+    private void activateDependentsIfReady(Task completedTask) {
+        if (completedTask.getDependents() == null) {
+            return;
+        }
+
+        for (Task child : completedTask.getDependents()) {
+            if (child.getStatus() == TaskStatus.COMPLETED) {
+                continue;
+            }
+
+            List<Task> parents = child.getDependsOn();
+            boolean allParentsCompleted =
+                    (parents == null || parents.isEmpty()) ||
+                            parents.stream().allMatch(p -> p.getStatus() == TaskStatus.COMPLETED);
+
+            if (allParentsCompleted && child.getStatus() == TaskStatus.PENDING) {
+                log.info("Activating child task {} because all parents of {} are COMPLETED",
+                        child.getId(), completedTask.getId());
+                child.setStatus(TaskStatus.READY);
+            }
+        }
+    }
 
     @Override
     public TaskResponse getTask(Long taskId) {
@@ -110,5 +130,4 @@ public class TaskServiceImpl implements TaskService {
 
         return task.getWorkflow().getId();
     }
-
 }

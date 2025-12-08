@@ -25,18 +25,18 @@ public class Task extends BaseAuditingEntity {
     @JoinColumn(name = "workflow_id")
     private Workflow workflow;
 
-
+    // PARENTS: tasks this task depends on
     @ManyToMany
-    @JoinTable(name = "task_dependencies")
+    @JoinTable(
+            name = "task_dependencies",
+            joinColumns = @JoinColumn(name = "task_id"),
+            inverseJoinColumns = @JoinColumn(name = "depends_on_task_id")
+    )
     private List<Task> dependsOn;
 
-    public List<Task> getDependsOn() {
-        return dependsOn;
-    }
-
-    public void setDependsOn(List<Task> dependsOn) {
-        this.dependsOn = dependsOn;
-    }
+    // CHILDREN: tasks that depend on THIS task
+    @ManyToMany(mappedBy = "dependsOn")
+    private List<Task> dependents;
 
     public Task() {}
 
@@ -62,6 +62,22 @@ public class Task extends BaseAuditingEntity {
 
     public Workflow getWorkflow() {
         return workflow;
+    }
+
+    public List<Task> getDependsOn() {
+        return dependsOn;
+    }
+
+    public void setDependsOn(List<Task> dependsOn) {
+        this.dependsOn = dependsOn;
+    }
+
+    public List<Task> getDependents() {
+        return dependents;
+    }
+
+    public void setDependents(List<Task> dependents) {
+        this.dependents = dependents;
     }
 
     public void setTitle(String title) {

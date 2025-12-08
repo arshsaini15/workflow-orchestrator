@@ -19,13 +19,12 @@ import com.arsh.workflow.util.WorkflowSpecifications;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.concurrent.Executor;
-
 
 @Service
 public class WorkflowServiceImpl implements WorkflowService {
@@ -38,7 +37,7 @@ public class WorkflowServiceImpl implements WorkflowService {
     public WorkflowServiceImpl(WorkflowRepository workflowRepository,
                                TaskRepository taskRepository,
                                WorkflowExecutorService workflowExecutorService,
-                               @Qualifier("workflowExecutor") Executor executor
+                               @Qualifier("workflowExecutorPool") Executor executor
     ) {
         this.workflowRepository = workflowRepository;
         this.taskRepository = taskRepository;
@@ -48,7 +47,6 @@ public class WorkflowServiceImpl implements WorkflowService {
 
     @Override
     public WorkflowResponse createWorkflow(CreateWorkflowRequest req) {
-
         String username = SecurityContextHolder.getContext()
                 .getAuthentication()
                 .getName();
@@ -57,23 +55,20 @@ public class WorkflowServiceImpl implements WorkflowService {
 
         workflow.setCreatedBy(username);
         workflow.setUpdatedBy(username);
-
         workflow.setStatus(WorkflowStatus.CREATED);
-        workflow = workflowRepository.save(workflow);
 
+        workflow = workflowRepository.save(workflow);
         return WorkflowMapper.toResponse(workflow);
     }
 
     @Override
     public WorkflowResponse getWorkflow(Long workflowId) {
-
         Workflow workflow = workflowRepository.findById(workflowId)
                 .orElseThrow(() -> new WorkflowNotFoundException(
                         "Workflow with id " + workflowId + " not found!"
                 ));
 
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-
         if (!workflow.getCreatedBy().equals(username)) {
             throw new AccessDeniedException("You cannot access this workflow");
         }
@@ -93,23 +88,18 @@ public class WorkflowServiceImpl implements WorkflowService {
 
         WorkflowResponse res = WorkflowMapper.toResponse(workflow);
         workflowRepository.delete(workflow);
-
         return res;
     }
 
-
     @Override
     public TaskResponse deleteTask(Long workflowId, Long taskId) {
-
         Workflow workflow = workflowRepository.findById(workflowId)
                 .orElseThrow(() -> new WorkflowNotFoundException("Workflow not found"));
 
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-
         if (!workflow.getCreatedBy().equals(username)) {
             throw new AccessDeniedException("Not your workflow");
         }
-
 
         Task task = workflow.getTasks().stream()
                 .filter(t -> t.getId().equals(taskId))
@@ -128,24 +118,22 @@ public class WorkflowServiceImpl implements WorkflowService {
 
     @Override
     public TaskResponse addTask(Long workflowId, CreateTaskRequest req) {
-
         Workflow workflow = workflowRepository.findById(workflowId)
                 .orElseThrow(() -> new WorkflowNotFoundException("Workflow not found"));
 
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-
         if (!workflow.getCreatedBy().equals(username)) {
             throw new AccessDeniedException("Not your workflow");
         }
 
-
         Task task = TaskMapper.toEntity(req);
-
         task.setStatus(TaskStatus.PENDING);
         task.setAssignedTo(null);
+
         workflow.addTask(task);
         workflowRepository.save(workflow);
 
+        // If workflow is already running, executor will pick up newly-activated tasks
         if (workflow.getStatus() == WorkflowStatus.RUNNING) {
             workflowExecutorService.executeWorkflow(workflowId);
         }
@@ -155,42 +143,41 @@ public class WorkflowServiceImpl implements WorkflowService {
 
     @Override
     public WorkflowResponse startWorkflow(Long workflowId) {
-
         Workflow workflow = workflowRepository.findById(workflowId)
                 .orElseThrow(() -> new WorkflowNotFoundException("Workflow not found"));
 
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-
         if (!workflow.getCreatedBy().equals(username)) {
             throw new AccessDeniedException("Not your workflow");
         }
 
-        workflow.getTasks().forEach(t -> {
+        // ✅ Only SOURCE tasks (no parents) become READY
+        for (Task t : workflow.getTasks()) {
             if (t.getStatus() == TaskStatus.PENDING) {
-                t.setStatus(TaskStatus.READY);
+                List<Task> parents = t.getDependsOn();
+                boolean hasNoParents = (parents == null || parents.isEmpty());
+                if (hasNoParents) {
+                    t.setStatus(TaskStatus.READY);
+                }
             }
-        });
+        }
 
         workflow.setStatus(WorkflowStatus.READY);
         workflowRepository.save(workflow);
 
         workflowExecutorService.executeWorkflow(workflowId);
-
         return WorkflowMapper.toResponse(workflow);
     }
 
     @Override
     public WorkflowResponse completeWorkflow(Long workflowId) {
-
         Workflow workflow = workflowRepository.findById(workflowId)
                 .orElseThrow(() -> new WorkflowNotFoundException("Workflow not found"));
 
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-
         if (!workflow.getCreatedBy().equals(username)) {
             throw new AccessDeniedException("Not your workflow");
         }
-
 
         for (Task task : workflow.getTasks()) {
             if (task.getStatus() != TaskStatus.COMPLETED) {
@@ -215,11 +202,9 @@ public class WorkflowServiceImpl implements WorkflowService {
             Pageable pageable
     ) {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-
         var spec = WorkflowSpecifications.filter(status, username, search);
 
         Page<Workflow> page = workflowRepository.findAll(spec, pageable);
-
         return PageMapper.toResponse(page.map(WorkflowMapper::toResponse));
     }
 
@@ -230,17 +215,13 @@ public class WorkflowServiceImpl implements WorkflowService {
             String search,
             Pageable pageable
     ) {
-
         Workflow workflow = workflowRepository.findById(workflowId)
                 .orElseThrow(() -> new WorkflowNotFoundException("Workflow not found"));
 
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-
         if (!workflow.getCreatedBy().equals(username)) {
             throw new AccessDeniedException("You cannot access tasks of another user's workflow");
         }
-
-
 
         var spec = TaskSpecifications.filter(status, search)
                 .and((root, query, cb) ->
