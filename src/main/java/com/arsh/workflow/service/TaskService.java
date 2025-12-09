@@ -1,7 +1,6 @@
 package com.arsh.workflow.service;
 
-import com.arsh.workflow.dto.TaskResponse;
-import com.arsh.workflow.model.Task;
+import com.arsh.workflow.dto.response.TaskResponse;
 import com.arsh.workflow.enums.TaskStatus;
 
 public interface TaskService {

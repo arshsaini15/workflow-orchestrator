@@ -1,11 +1,11 @@
-package com.arsh.workflow.dto;
+package com.arsh.workflow.dto.request;
 
 import lombok.Getter;
 import lombok.Setter;
 
 @Getter
 @Setter
-public class RegisterRequestDto {
+public class LoginRequestDto {
     private String username;
     private String password;
 }

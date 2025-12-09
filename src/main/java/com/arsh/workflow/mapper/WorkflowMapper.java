@@ -1,7 +1,7 @@
 package com.arsh.workflow.mapper;
 
-import com.arsh.workflow.dto.CreateWorkflowRequest;
-import com.arsh.workflow.dto.WorkflowResponse;
+import com.arsh.workflow.dto.request.CreateWorkflowRequest;
+import com.arsh.workflow.dto.response.WorkflowResponse;
 import com.arsh.workflow.model.Workflow;
 
 public class WorkflowMapper {

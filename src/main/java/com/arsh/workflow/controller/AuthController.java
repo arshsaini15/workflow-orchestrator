@@ -1,8 +1,8 @@
 package com.arsh.workflow.controller;
 
-import com.arsh.workflow.dto.AuthResponseDto;
-import com.arsh.workflow.dto.LoginRequestDto;
-import com.arsh.workflow.dto.RegisterRequestDto;
+import com.arsh.workflow.dto.response.AuthResponseDto;
+import com.arsh.workflow.dto.request.LoginRequestDto;
+import com.arsh.workflow.dto.request.RegisterRequestDto;
 import com.arsh.workflow.service.impl.AuthService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;

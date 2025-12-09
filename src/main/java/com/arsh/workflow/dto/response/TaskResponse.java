@@ -1,4 +1,4 @@
-package com.arsh.workflow.dto;
+package com.arsh.workflow.dto.response;
 
 import com.arsh.workflow.enums.TaskStatus;
 import lombok.Getter;

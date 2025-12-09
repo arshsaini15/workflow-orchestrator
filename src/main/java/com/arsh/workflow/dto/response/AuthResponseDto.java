@@ -1,4 +1,4 @@
-package com.arsh.workflow.dto;
+package com.arsh.workflow.dto.response;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;

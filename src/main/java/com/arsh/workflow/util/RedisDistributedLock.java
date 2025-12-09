@@ -60,4 +60,16 @@ public class RedisDistributedLock {
         );
         return Long.valueOf(1L).equals(result);
     }
+
+    // 🔹 NEW: check if a task has already been marked executed
+    public boolean isAlreadyExecuted(String key) {
+        Boolean exists = redisTemplate.hasKey(key);
+        return Boolean.TRUE.equals(exists);
+    }
+
+    // 🔹 NEW: mark a task as executed (idempotency flag)
+    public void markExecuted(String key, Duration ttl) {
+        // We don't care if it existed already; last write wins, TTL refreshed.
+        redisTemplate.opsForValue().set(key, "1", ttl);
+    }
 }

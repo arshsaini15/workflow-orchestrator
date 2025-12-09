@@ -1,4 +1,4 @@
-package com.arsh.workflow.dto;
+package com.arsh.workflow.dto.request;
 
 import lombok.Getter;
 import lombok.Setter;

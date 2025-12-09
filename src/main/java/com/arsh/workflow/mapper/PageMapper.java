@@ -1,6 +1,6 @@
 package com.arsh.workflow.mapper;
 
-import com.arsh.workflow.dto.PaginatedResponse;
+import com.arsh.workflow.dto.response.PaginatedResponse;
 import org.springframework.data.domain.Page;
 
 public class PageMapper {

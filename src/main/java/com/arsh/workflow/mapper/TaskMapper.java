@@ -1,7 +1,7 @@
 package com.arsh.workflow.mapper;
 
-import com.arsh.workflow.dto.CreateTaskRequest;
-import com.arsh.workflow.dto.TaskResponse;
+import com.arsh.workflow.dto.request.CreateTaskRequest;
+import com.arsh.workflow.dto.response.TaskResponse;
 import com.arsh.workflow.model.Task;
 
 public class TaskMapper {

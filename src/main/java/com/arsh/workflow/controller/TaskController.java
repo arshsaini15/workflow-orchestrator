@@ -1,6 +1,6 @@
 package com.arsh.workflow.controller;
 
-import com.arsh.workflow.dto.TaskResponse;
+import com.arsh.workflow.dto.response.TaskResponse;
 import com.arsh.workflow.enums.TaskStatus;
 import com.arsh.workflow.service.impl.TaskServiceImpl;
 import org.springframework.web.bind.annotation.*;

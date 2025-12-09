@@ -1,6 +1,6 @@
 package com.arsh.workflow.service.impl;
 
-import com.arsh.workflow.dto.TaskResponse;
+import com.arsh.workflow.dto.response.TaskResponse;
 import com.arsh.workflow.enums.TaskStatus;
 import com.arsh.workflow.enums.WorkflowStatus;
 import com.arsh.workflow.exception.TaskNotFoundException;

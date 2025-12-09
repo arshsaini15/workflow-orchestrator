@@ -1,7 +1,7 @@
 package com.arsh.workflow.mapper;
 
-import com.arsh.workflow.dto.AuthResponseDto;
-import com.arsh.workflow.dto.RegisterRequestDto;
+import com.arsh.workflow.dto.response.AuthResponseDto;
+import com.arsh.workflow.dto.request.RegisterRequestDto;
 import com.arsh.workflow.model.User;
 
 public class UserMapper {

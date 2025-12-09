@@ -36,6 +36,9 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
     private static final long LOCK_WAIT_MS = 2000L;
     private static final long LOCK_RETRY_MS = 100L;
 
+    // 🔹 NEW: how long we keep the "done" flag in Redis
+    private static final Duration EXECUTION_TTL = Duration.ofHours(24);
+
     public WorkflowExecutorServiceImpl(TaskServiceImpl taskService,
                                        TaskRepository taskRepository,
                                        WorkflowRepository workflowRepository,
@@ -86,13 +89,21 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
     }
 
     /**
-     * Core execution gate: Redis lock → retries → business logic
+     * Core execution gate: Redis lock → idempotency → retries → business logic
      */
     private void runTaskWithLock(Long taskId) {
         String lockKey = "task:lock:" + taskId;
+        String doneKey = "task:done:" + taskId;   // 🔹 NEW: idempotency key
         String token = null;
 
         try {
+            // 🔹 1) FAST PATH: if already marked executed in Redis, skip immediately
+            if (redisDistributedLock.isAlreadyExecuted(doneKey)) {
+                log.info("Task {}: already marked executed in Redis. Skipping.", taskId);
+                return;
+            }
+
+            // Acquire distributed lock
             token = redisDistributedLock.lockBlocking(
                     lockKey,
                     LOCK_TTL,
@@ -105,8 +116,14 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
                 return;
             }
 
+            // 🔹 2) DOUBLE-CHECK after acquiring lock to avoid race between check and lock
+            if (redisDistributedLock.isAlreadyExecuted(doneKey)) {
+                log.info("Task {}: already executed (post-lock check). Skipping.", taskId);
+                return;
+            }
+
             // Inside lock → safe across nodes
-            runTaskWithRetries(taskId);
+            runTaskWithRetries(taskId, doneKey);
 
         } catch (Exception e) {
             log.error("Task {}: error during execution with lock", taskId, e);
@@ -122,17 +139,16 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
 
     @Override
     public void triggerNextTasks(Long workflowId) {
-        // ❌ NO DAG logic here anymore.
-        // ✅ Just rescan this workflow for READY tasks and schedule them.
         executeWorkflow(workflowId);
     }
 
-    private void runTaskWithRetries(Long taskId) {
+    // 🔹 UPDATED SIGNATURE: we pass doneKey so we can mark idempotency on success
+    private void runTaskWithRetries(Long taskId, String doneKey) {
         int attempt = 0;
         while (true) {
             attempt++;
             try {
-                runTaskOnce(taskId, attempt);
+                runTaskOnce(taskId, attempt, doneKey);
                 return;
             } catch (Exception ex) {
                 log.error("Task {} failed on attempt {}/{}: {}", taskId, attempt, maxRetries, ex.toString());
@@ -153,7 +169,8 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
         }
     }
 
-    private void runTaskOnce(Long taskId, int attemptNumber) {
+    // 🔹 UPDATED SIGNATURE: receives doneKey
+    private void runTaskOnce(Long taskId, int attemptNumber, String doneKey) {
         Optional<Task> maybeTask = taskRepository.findById(taskId);
         if (maybeTask.isEmpty()) {
             throw new RuntimeException("Task not found: " + taskId);
@@ -163,7 +180,7 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
 
         // DB-level idempotency check
         if (task.getStatus() == TaskStatus.COMPLETED) {
-            log.info("Task {} already COMPLETED, skipping.", taskId);
+            log.info("Task {} already COMPLETED in DB, skipping.", taskId);
             return;
         }
 
@@ -180,6 +197,9 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
 
             // Mark COMPLETED and unlock children (DAG logic in TaskServiceImpl)
             taskService.changeStatus(taskId, TaskStatus.COMPLETED);
+
+            // 🔹 3) MARK EXECUTED IN REDIS (idempotency flag)
+            redisDistributedLock.markExecuted(doneKey, EXECUTION_TTL);
 
             // After children potentially moved to READY, schedule them
             Long workflowId = taskService.getWorkflowId(taskId);
@@ -229,9 +249,6 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
                     List.of(TaskStatus.PENDING, TaskStatus.READY)
             );
 
-            // NOTE: this method is now less important; real workflow status is mostly
-            // driven by TaskServiceImpl.changeStatus. You can later improve this to also
-            // check IN_PROGRESS / FAILED explicitly.
             if (pendingOrReady == null || pendingOrReady.isEmpty()) {
                 Optional<Workflow> maybeWf = workflowRepository.findById(workflowId);
                 if (maybeWf.isPresent()) {

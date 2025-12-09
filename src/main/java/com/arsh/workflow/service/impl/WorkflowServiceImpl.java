@@ -1,6 +1,10 @@
 package com.arsh.workflow.service.impl;
 
-import com.arsh.workflow.dto.*;
+import com.arsh.workflow.dto.request.CreateTaskRequest;
+import com.arsh.workflow.dto.request.CreateWorkflowRequest;
+import com.arsh.workflow.dto.response.PaginatedResponse;
+import com.arsh.workflow.dto.response.TaskResponse;
+import com.arsh.workflow.dto.response.WorkflowResponse;
 import com.arsh.workflow.enums.TaskStatus;
 import com.arsh.workflow.enums.WorkflowStatus;
 import com.arsh.workflow.exception.IllegalWorkflowOperationException;
@@ -16,6 +20,7 @@ import com.arsh.workflow.service.WorkflowExecutorService;
 import com.arsh.workflow.service.WorkflowService;
 import com.arsh.workflow.util.TaskSpecifications;
 import com.arsh.workflow.util.WorkflowSpecifications;
+import com.arsh.workflow.validation.WorkflowGraphValidator;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -33,20 +38,27 @@ public class WorkflowServiceImpl implements WorkflowService {
     private final TaskRepository taskRepository;
     private final WorkflowExecutorService workflowExecutorService;
     private final Executor executor;
+    private final WorkflowGraphValidator workflowGraphValidator;
+
 
     public WorkflowServiceImpl(WorkflowRepository workflowRepository,
                                TaskRepository taskRepository,
                                WorkflowExecutorService workflowExecutorService,
+                               WorkflowGraphValidator workflowGraphValidator,
                                @Qualifier("workflowExecutorPool") Executor executor
     ) {
         this.workflowRepository = workflowRepository;
         this.taskRepository = taskRepository;
         this.workflowExecutorService = workflowExecutorService;
+        this.workflowGraphValidator = workflowGraphValidator;
         this.executor = executor;
     }
 
     @Override
     public WorkflowResponse createWorkflow(CreateWorkflowRequest req) {
+
+        workflowGraphValidator.validateOrThrow(req.getTasks());
+
         String username = SecurityContextHolder.getContext()
                 .getAuthentication()
                 .getName();

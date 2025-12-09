@@ -1,4 +1,4 @@
-package com.arsh.workflow.dto;
+package com.arsh.workflow.dto.request;
 
 import com.arsh.workflow.enums.TaskStatus;
 import jakarta.validation.constraints.NotNull;
