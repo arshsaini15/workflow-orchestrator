@@ -31,19 +31,21 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
     private final int maxRetries = 3;
     private final long baseBackoffMs = 500L;
 
-    // Lock tuning
+    // Lock config
     private static final Duration LOCK_TTL = Duration.ofSeconds(30);
     private static final long LOCK_WAIT_MS = 2000L;
     private static final long LOCK_RETRY_MS = 100L;
 
-    // 🔹 NEW: how long we keep the "done" flag in Redis
+    // Idempotency TTL
     private static final Duration EXECUTION_TTL = Duration.ofHours(24);
 
-    public WorkflowExecutorServiceImpl(TaskServiceImpl taskService,
-                                       TaskRepository taskRepository,
-                                       WorkflowRepository workflowRepository,
-                                       RedisDistributedLock redisDistributedLock,
-                                       @Qualifier("workflowExecutorPool") ExecutorService executorService) {
+    public WorkflowExecutorServiceImpl(
+            TaskServiceImpl taskService,
+            TaskRepository taskRepository,
+            WorkflowRepository workflowRepository,
+            RedisDistributedLock redisDistributedLock,
+            @Qualifier("workflowExecutorPool") ExecutorService executorService
+    ) {
         this.executorService = executorService;
         this.taskService = taskService;
         this.taskRepository = taskRepository;
@@ -53,57 +55,51 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
 
     @Override
     public void executeWorkflow(Long workflowId) {
-        // Try to mark workflow RUNNING
+        // Mark workflow RUNNING if not already
         try {
-            Optional<Workflow> maybeWf = workflowRepository.findById(workflowId);
-            if (maybeWf.isPresent()) {
-                Workflow wf = maybeWf.get();
+            Optional<Workflow> maybe = workflowRepository.findById(workflowId);
+            if (maybe.isPresent()) {
+                Workflow wf = maybe.get();
                 if (wf.getStatus() != WorkflowStatus.RUNNING) {
                     wf.setStatus(WorkflowStatus.RUNNING);
                     workflowRepository.save(wf);
                 }
             }
         } catch (Exception e) {
-            log.warn("Unable to mark workflow {} RUNNING: {}", workflowId, e.toString());
+            log.warn("Unable to mark workflow {} RUNNING: {}", workflowId, e.getMessage());
         }
 
-        // Only schedule tasks that are READY (DAG logic already handled elsewhere)
-        List<Task> readyTasks =
-                taskRepository.findByWorkflowIdAndStatus(workflowId, TaskStatus.READY);
-
+        // Pick READY tasks only
+        List<Task> readyTasks = taskRepository.findByWorkflowIdAndStatus(workflowId, TaskStatus.READY);
         if (readyTasks == null || readyTasks.isEmpty()) {
-            log.debug("No READY tasks found for workflow {}", workflowId);
+            log.debug("No READY tasks for workflow {}", workflowId);
             return;
         }
 
         for (Task t : readyTasks) {
-            Long taskId = t.getId();
-            executorService.submit(() -> runTaskWithLock(taskId));
+            executorService.submit(() -> runTaskWithLock(t.getId()));
         }
     }
 
     @Override
     public void runTask(Long taskId) {
-        // Public entry goes through lock as well
+        // Public call still goes through lock
         runTaskWithLock(taskId);
     }
 
-    /**
-     * Core execution gate: Redis lock → idempotency → retries → business logic
-     */
     private void runTaskWithLock(Long taskId) {
         String lockKey = "task:lock:" + taskId;
-        String doneKey = "task:done:" + taskId;   // 🔹 NEW: idempotency key
+        String doneKey = "task:done:" + taskId;
         String token = null;
 
         try {
-            // 🔹 1) FAST PATH: if already marked executed in Redis, skip immediately
+            // Idempotency pre-check
             if (redisDistributedLock.isAlreadyExecuted(doneKey)) {
-                log.info("Task {}: already marked executed in Redis. Skipping.", taskId);
+                log.info("Task {} already executed (fast path). Skipping.", taskId);
                 return;
             }
 
-            // Acquire distributed lock
+            // Acquire lock
             token = redisDistributedLock.lockBlocking(
                     lockKey,
                     LOCK_TTL,
@@ -112,29 +108,126 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
             );
 
             if (token == null) {
-                log.info("Task {}: could not acquire lock (likely running elsewhere). Skipping.", taskId);
+                log.info("Task {} lock unavailable. Skipping.", taskId);
                 return;
             }
 
-            // 🔹 2) DOUBLE-CHECK after acquiring lock to avoid race between check and lock
+            // Double check for idempotency
             if (redisDistributedLock.isAlreadyExecuted(doneKey)) {
-                log.info("Task {}: already executed (post-lock check). Skipping.", taskId);
+                log.info("Task {} already executed (post-lock). Skipping.", taskId);
                 return;
             }
 
-            // Inside lock → safe across nodes
+            // Run with retry logic
             runTaskWithRetries(taskId, doneKey);
 
         } catch (Exception e) {
-            log.error("Task {}: error during execution with lock", taskId, e);
+            log.error("Task {} error during execution: {}", taskId, e.getMessage(), e);
         } finally {
             if (token != null) {
                 boolean released = redisDistributedLock.releaseLock(lockKey, token);
                 if (!released) {
-                    log.warn("Task {}: Redis lock {} not released (expired or stolen).", taskId, lockKey);
+                    log.warn("Task {} lock not released (expired or stolen).", taskId);
                 }
             }
         }
+    }
+
+    private void runTaskWithRetries(Long taskId, String doneKey) {
+        int attempt = 0;
+
+        while (true) {
+            attempt++;
+            try {
+                runTaskOnce(taskId, attempt, doneKey);
+                return;
+            } catch (Exception ex) {
+                log.error("Task {} attempt {}/{} failed: {}", taskId, attempt, maxRetries, ex.getMessage());
+
+                if (attempt >= maxRetries) {
+                    markTaskFailed(taskId, ex);
+                    return;
+                }
+
+                long backoff = baseBackoffMs * (1L << (attempt - 1));
+                try {
+                    TimeUnit.MILLISECONDS.sleep(backoff);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        }
+    }
+
+    private void runTaskOnce(Long taskId, int attempt, String doneKey) throws Exception {
+        Optional<Task> maybe = taskRepository.findById(taskId);
+        if (maybe.isEmpty()) {
+            throw new RuntimeException("Task not found: " + taskId);
+        }
+
+        Task task = maybe.get();
+
+        // DB idempotency
+        if (task.getStatus() == TaskStatus.COMPLETED) {
+            log.info("Task {} already COMPLETED. Skipping.", taskId);
+            return;
+        }
+
+        if (task.getStatus() == TaskStatus.IN_PROGRESS) {
+            log.info("Task {} already IN_PROGRESS. Skipping duplicate execution.", taskId);
+            return;
+        }
+
+        // Mark IN_PROGRESS
+        taskService.changeStatus(taskId, TaskStatus.IN_PROGRESS);
+
+        try {
+            // ---- YOUR BUSINESS LOGIC ----
+            performTaskBusinessLogic(task);
+
+            // Mark COMPLETED (also unlocks dependent tasks)
+            taskService.changeStatus(taskId, TaskStatus.COMPLETED);
+
+            // Mark idempotency flag
+            redisDistributedLock.markExecuted(doneKey, EXECUTION_TTL);
+
+            // Trigger next tasks
+            Long wfId = task.getWorkflow().getId();
+            triggerNextTasks(wfId);
+
+            log.info("Task {} finished successfully on attempt {}", taskId, attempt);
+
+        } catch (Exception e) {
+            log.error("Exception while executing task {} on attempt {}: {}", taskId, attempt, e.getMessage());
+            throw e;
+        }
+    }
+
+    private void markTaskFailed(Long taskId, Exception cause) {
+        Optional<Task> maybe = taskRepository.findById(taskId);
+        if (maybe.isEmpty()) {
+            return;
+        }
+
+        Task task = maybe.get();
+
+        try {
+            taskService.changeStatus(taskId, TaskStatus.FAILED);
+        } catch (Exception ignored) {
+            task.setStatus(TaskStatus.FAILED);
+            taskRepository.save(task);
+        }
+
+        Long wfId = task.getWorkflow().getId();
+
+        Optional<Workflow> wfMaybe = workflowRepository.findById(wfId);
+        wfMaybe.ifPresent(wf -> {
+            wf.setStatus(WorkflowStatus.FAILED);
+            workflowRepository.save(wf);
+        });
+
+        log.error("Task {} permanently FAILED. Cause: {}", taskId, cause.getMessage());
     }
 
     @Override
@@ -142,128 +235,8 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
         executeWorkflow(workflowId);
     }
 
-    // 🔹 UPDATED SIGNATURE: we pass doneKey so we can mark idempotency on success
-    private void runTaskWithRetries(Long taskId, String doneKey) {
-        int attempt = 0;
-        while (true) {
-            attempt++;
-            try {
-                runTaskOnce(taskId, attempt, doneKey);
-                return;
-            } catch (Exception ex) {
-                log.error("Task {} failed on attempt {}/{}: {}", taskId, attempt, maxRetries, ex.toString());
-                if (attempt >= maxRetries) {
-                    log.error("Task {} reached max retries. Marking FAILED.", taskId);
-                    markTaskFailed(taskId, ex);
-                    return;
-                } else {
-                    long backoff = baseBackoffMs * (1L << (attempt - 1));
-                    try {
-                        TimeUnit.MILLISECONDS.sleep(backoff);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        log.warn("Backoff sleep interrupted for task {}: {}", taskId, ie.toString());
-                    }
-                }
-            }
-        }
-    }
-
-    // 🔹 UPDATED SIGNATURE: receives doneKey
-    private void runTaskOnce(Long taskId, int attemptNumber, String doneKey) {
-        Optional<Task> maybeTask = taskRepository.findById(taskId);
-        if (maybeTask.isEmpty()) {
-            throw new RuntimeException("Task not found: " + taskId);
-        }
-
-        Task task = maybeTask.get();
-
-        // DB-level idempotency check
-        if (task.getStatus() == TaskStatus.COMPLETED) {
-            log.info("Task {} already COMPLETED in DB, skipping.", taskId);
-            return;
-        }
-
-        if (task.getStatus() == TaskStatus.IN_PROGRESS) {
-            log.info("Task {} already IN_PROGRESS, skipping duplicate run.", taskId);
-            return;
-        }
-
-        // Mark IN_PROGRESS via TaskService (also updates workflow status)
-        taskService.changeStatus(taskId, TaskStatus.IN_PROGRESS);
-
-        try {
-            performTaskBusinessLogic(task);
-
-            // Mark COMPLETED and unlock children (DAG logic in TaskServiceImpl)
-            taskService.changeStatus(taskId, TaskStatus.COMPLETED);
-
-            // 🔹 3) MARK EXECUTED IN REDIS (idempotency flag)
-            redisDistributedLock.markExecuted(doneKey, EXECUTION_TTL);
-
-            // After children potentially moved to READY, schedule them
-            Long workflowId = taskService.getWorkflowId(taskId);
-            triggerNextTasks(workflowId);
-
-            log.info("Task {} completed successfully (attempt {}).", taskId, attemptNumber);
-        } catch (Exception e) {
-            log.error("Exception executing task {} on attempt {}: {}", taskId, attemptNumber, e.toString());
-            throw new RuntimeException(e);
-        }
-    }
-
-    private void markTaskFailed(Long taskId, Exception cause) {
-        Optional<Task> maybeTask = taskRepository.findById(taskId);
-        if (maybeTask.isEmpty()) {
-            log.warn("markTaskFailed: task {} not found", taskId);
-            return;
-        }
-        Task task = maybeTask.get();
-        try {
-            taskService.changeStatus(taskId, TaskStatus.FAILED);
-        } catch (Exception e) {
-            log.warn("Unable to set task {} status to FAILED via taskService: {}", taskId, e.toString());
-            task.setStatus(TaskStatus.FAILED);
-            taskRepository.save(task);
-        }
-
-        Long workflowId = task.getWorkflow().getId();
-        try {
-            Optional<Workflow> maybeWf = workflowRepository.findById(workflowId);
-            if (maybeWf.isPresent()) {
-                Workflow wf = maybeWf.get();
-                wf.setStatus(WorkflowStatus.FAILED);
-                workflowRepository.save(wf);
-            }
-        } catch (Exception e) {
-            log.warn("Failed to mark workflow {} FAILED after task {} failure: {}", workflowId, taskId, e.toString());
-        }
-
-        log.error("Task {} marked FAILED. Cause: {}", taskId, cause.toString());
-    }
-
-    private void evaluateWorkflowCompletion(Long workflowId) {
-        try {
-            List<Task> pendingOrReady = taskRepository.findByWorkflowIdAndStatusIn(
-                    workflowId,
-                    List.of(TaskStatus.PENDING, TaskStatus.READY)
-            );
-
-            if (pendingOrReady == null || pendingOrReady.isEmpty()) {
-                Optional<Workflow> maybeWf = workflowRepository.findById(workflowId);
-                if (maybeWf.isPresent()) {
-                    Workflow wf = maybeWf.get();
-                    wf.setStatus(WorkflowStatus.COMPLETED);
-                    workflowRepository.save(wf);
-                    log.info("Workflow {} marked COMPLETED (no PENDING/READY tasks).", workflowId);
-                }
-            }
-        } catch (Exception e) {
-            log.warn("evaluateWorkflowCompletion failed for workflow {}: {}", workflowId, e.toString());
-        }
-    }
-
     protected void performTaskBusinessLogic(Task task) throws Exception {
-        log.info("Performing business logic for task {}", task.getId());
+        // Replace this with actual logic later
+        log.info("Executing business logic for task {}", task.getId());
     }
 }

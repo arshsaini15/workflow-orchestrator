@@ -7,19 +7,17 @@ import com.arsh.workflow.dto.response.TaskResponse;
 import com.arsh.workflow.dto.response.WorkflowResponse;
 import com.arsh.workflow.enums.TaskStatus;
 import com.arsh.workflow.enums.WorkflowStatus;
-import com.arsh.workflow.service.impl.WorkflowServiceImpl;
+import com.arsh.workflow.service.WorkflowService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/workflow")
+@RequiredArgsConstructor
 public class WorkflowController {
 
-    private WorkflowServiceImpl workflowService;
-
-    public WorkflowController(WorkflowServiceImpl workflowService) {
-        this.workflowService = workflowService;
-    }
+    private final WorkflowService workflowService;
 
     @PostMapping("/create")
     public WorkflowResponse createWorkflow(@RequestBody CreateWorkflowRequest req) {
@@ -57,12 +55,15 @@ public class WorkflowController {
             @RequestParam(required = false) String createdBy,
             @RequestParam(required = false) String search,
             Pageable pageable
-    ){
+    ) {
         return workflowService.getAllWorkflows(status, createdBy, search, pageable);
     }
 
     @DeleteMapping("/{workflowId}/delete/{taskId}")
-    public TaskResponse deleteTask(@PathVariable Long workflowId, @PathVariable Long taskId) {
+    public TaskResponse deleteTask(
+            @PathVariable Long workflowId,
+            @PathVariable Long taskId
+    ) {
         return workflowService.deleteTask(workflowId, taskId);
     }
 

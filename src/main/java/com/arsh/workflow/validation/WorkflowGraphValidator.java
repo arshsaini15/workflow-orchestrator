@@ -10,14 +10,16 @@ import java.util.*;
 public class WorkflowGraphValidator {
 
     public void validateOrThrow(List<BatchTaskRequest> tasks) {
+
         List<String> errors = new ArrayList<>();
 
         if (tasks == null || tasks.isEmpty()) {
-            errors.add("Workflow must contain at least one task.");
-            throw new InvalidWorkflowDefinitionException(errors);
+            throw new InvalidWorkflowDefinitionException(
+                    List.of("Workflow must contain at least one task.")
+            );
         }
 
-        // ---- 1) Unique alias (clientId) check ----
+        // 1. Validate unique aliases
         Map<String, BatchTaskRequest> aliasToTask = new HashMap<>();
         for (BatchTaskRequest t : tasks) {
             String alias = t.getClientId();
@@ -40,7 +42,7 @@ public class WorkflowGraphValidator {
 
         int n = aliasToTask.size();
 
-        // ---- 2) Build adjacency + indegree ----
+        // 2. Build adjacency list and indegree
         Map<String, List<String>> adj = new HashMap<>();
         Map<String, Integer> indegree = new HashMap<>();
 
@@ -49,18 +51,17 @@ public class WorkflowGraphValidator {
             indegree.put(alias, 0);
         }
 
-        // ---- 3) Validate dependencies + build edges ----
+        // 3. Validate dependencies and build edges
         for (BatchTaskRequest task : tasks) {
-
             String alias = task.getClientId();
             List<String> deps = task.getDependsOn();
+
             if (deps == null) continue;
 
             Set<String> seenDeps = new HashSet<>();
 
             for (String depAlias : deps) {
 
-                // duplicate dependency
                 if (!seenDeps.add(depAlias)) {
                     errors.add("Task '" + alias + "' has duplicate dependency '" + depAlias + "'");
                     continue;
@@ -71,19 +72,17 @@ public class WorkflowGraphValidator {
                     continue;
                 }
 
-                // self dependency
                 if (alias.equals(depAlias)) {
                     errors.add("Task '" + alias + "' cannot depend on itself.");
                     continue;
                 }
 
-                // dependency existence
                 if (!aliasToTask.containsKey(depAlias)) {
                     errors.add("Task '" + alias + "' depends on non-existent alias '" + depAlias + "'");
                     continue;
                 }
 
-                // edge: dep → alias
+                // Add edge dependency: dep → alias
                 adj.get(depAlias).add(alias);
                 indegree.put(alias, indegree.get(alias) + 1);
             }
@@ -93,34 +92,35 @@ public class WorkflowGraphValidator {
             throw new InvalidWorkflowDefinitionException(errors);
         }
 
-        // ---- 4) Kahn's Algorithm (cycle detection) ----
+        // 4. Cycle detection (Kahn's Algorithm)
         Queue<String> q = new ArrayDeque<>();
 
-        for (Map.Entry<String, Integer> entry : indegree.entrySet()) {
-            if (entry.getValue() == 0) {
-                q.offer(entry.getKey());
+        for (Map.Entry<String, Integer> e : indegree.entrySet()) {
+            if (e.getValue() == 0) {
+                q.offer(e.getKey());
             }
         }
 
-        int visitedCount = 0;
+        int visited = 0;
 
         while (!q.isEmpty()) {
             String current = q.poll();
-            visitedCount++;
+            visited++;
 
             for (String next : adj.get(current)) {
-                int newIndegree = indegree.get(next) - 1;
-                indegree.put(next, newIndegree);
+                int newIn = indegree.get(next) - 1;
+                indegree.put(next, newIn);
 
-                if (newIndegree == 0) {
+                if (newIn == 0) {
                     q.offer(next);
                 }
             }
         }
 
-        if (visitedCount != n) {
-            errors.add("Workflow contains a cyclic dependency and is not a DAG.");
-            throw new InvalidWorkflowDefinitionException(errors);
+        if (visited != n) {
+            throw new InvalidWorkflowDefinitionException(
+                    List.of("Workflow contains a cyclic dependency and is not a DAG.")
+            );
         }
     }
 }
