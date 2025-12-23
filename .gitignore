@@ -34,3 +34,5 @@ build/
 
 
 /resources/
+
+echo ".DS_Store" >> .gitignore

@@ -1,8 +1,11 @@
 package com.arsh.workflow.service.impl;
 
 import com.arsh.workflow.dto.response.TaskResponse;
+import com.arsh.workflow.enums.EventType;
 import com.arsh.workflow.enums.TaskStatus;
 import com.arsh.workflow.enums.WorkflowStatus;
+import com.arsh.workflow.events.WorkflowEvent;
+import com.arsh.workflow.events.producer.WorkflowEventProducer;
 import com.arsh.workflow.exception.TaskNotFoundException;
 import com.arsh.workflow.mapper.TaskMapper;
 import com.arsh.workflow.model.Task;
@@ -16,7 +19,9 @@ import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 @Slf4j
@@ -25,44 +30,80 @@ public class TaskServiceImpl implements TaskService {
     private final TaskRepository taskRepository;
     private final UserRepository userRepository;
     private final WorkflowRepository workflowRepository;
+    private final WorkflowEventProducer eventProducer;
 
-    public TaskServiceImpl(TaskRepository taskRepository,
-                           UserRepository userRepository,
-                           WorkflowRepository workflowRepository) {
+    public TaskServiceImpl(
+            TaskRepository taskRepository,
+            UserRepository userRepository,
+            WorkflowRepository workflowRepository,
+            WorkflowEventProducer eventProducer
+    ) {
         this.taskRepository = taskRepository;
         this.userRepository = userRepository;
         this.workflowRepository = workflowRepository;
+        this.eventProducer = eventProducer;
     }
 
     @Override
     public TaskResponse assignTask(Long taskId, Long userId) {
+
         Task task = taskRepository.findById(taskId)
-                .orElseThrow(() -> new RuntimeException("Task with id " + taskId + " not found"));
+                .orElseThrow(() ->
+                        new TaskNotFoundException("Task with id " + taskId + " not found"));
 
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User with id " + userId + " not found"));
+                .orElseThrow(() ->
+                        new RuntimeException("User with id " + userId + " not found"));
 
         task.setAssignedTo(user);
-        task.setStatus(TaskStatus.IN_PROGRESS);
+        taskRepository.save(task);
 
-        task = taskRepository.save(task);
         return TaskMapper.toResponse(task);
     }
 
     @Override
-    @Transactional
-    public TaskResponse changeStatus(Long taskId, TaskStatus status) {
+    public TaskResponse getTask(Long taskId) {
+
         Task task = taskRepository.findById(taskId)
-                .orElseThrow(() -> new TaskNotFoundException("Task with id " + taskId + " not found"));
+                .orElseThrow(() ->
+                        new TaskNotFoundException("Task with id " + taskId + " not found"));
 
-        task.setStatus(status);
-        taskRepository.save(task);
+        return TaskMapper.toResponse(task);
+    }
 
-        // ✅ DAG propagation: if this task just COMPLETED, check its dependents
-        if (status == TaskStatus.COMPLETED) {
-            activateDependentsIfReady(task);
+    @Override
+    public Long getWorkflowId(Long taskId) {
+
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() ->
+                        new TaskNotFoundException("Task with id " + taskId + " not found"));
+
+        return task.getWorkflow().getId();
+    }
+
+    @Override
+    @Transactional
+    public TaskResponse changeStatus(Long taskId, TaskStatus newStatus) {
+
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() ->
+                        new TaskNotFoundException("Task with id " + taskId + " not found"));
+
+        TaskStatus previousStatus = task.getStatus();
+
+        // No-op guard (CRITICAL)
+        if (previousStatus == newStatus) {
+            return TaskMapper.toResponse(task);
         }
 
+        // Update task
+        task.setStatus(newStatus);
+        taskRepository.save(task);
+
+        // Emit TASK-level event
+        emitTaskEvent(task, previousStatus, newStatus);
+
+        // ---- Workflow state recalculation ----
         Workflow workflow = task.getWorkflow();
         if (workflow != null) {
             List<Task> tasks = workflow.getTasks();
@@ -70,11 +111,13 @@ public class TaskServiceImpl implements TaskService {
             boolean allCompleted = tasks.stream()
                     .allMatch(t -> t.getStatus() == TaskStatus.COMPLETED);
 
+            boolean anyFailed = tasks.stream()
+                    .anyMatch(t -> t.getStatus() == TaskStatus.FAILED);
+
             boolean anyInProgress = tasks.stream()
                     .anyMatch(t -> t.getStatus() == TaskStatus.IN_PROGRESS);
 
-            boolean anyFailed = tasks.stream()
-                    .anyMatch(t -> t.getStatus() == TaskStatus.FAILED);
+            WorkflowStatus previousWorkflowStatus = workflow.getStatus();
 
             if (allCompleted) {
                 workflow.setStatus(WorkflowStatus.COMPLETED);
@@ -87,47 +130,68 @@ public class TaskServiceImpl implements TaskService {
             }
 
             workflowRepository.save(workflow);
+
+            // Emit WORKFLOW-level completion/failure event if needed
+            emitWorkflowEventIfNeeded(workflow, previousWorkflowStatus);
         }
 
         return TaskMapper.toResponse(task);
     }
 
-    private void activateDependentsIfReady(Task completedTask) {
-        if (completedTask.getDependents() == null) {
-            return;
+    private void emitTaskEvent(Task task, TaskStatus from, TaskStatus to) {
+
+        EventType eventType = null;
+
+        if (from == TaskStatus.READY && to == TaskStatus.IN_PROGRESS) {
+            eventType = EventType.TASK_STARTED;
+        } else if (from == TaskStatus.IN_PROGRESS && to == TaskStatus.COMPLETED) {
+            eventType = EventType.TASK_COMPLETED;
+        } else if (from == TaskStatus.IN_PROGRESS && to == TaskStatus.FAILED) {
+            eventType = EventType.TASK_FAILED;
         }
 
-        for (Task child : completedTask.getDependents()) {
-            if (child.getStatus() == TaskStatus.COMPLETED) {
-                continue;
-            }
+        if (eventType == null) return;
 
-            List<Task> parents = child.getDependsOn();
-            boolean allParentsCompleted =
-                    (parents == null || parents.isEmpty()) ||
-                            parents.stream().allMatch(p -> p.getStatus() == TaskStatus.COMPLETED);
+        WorkflowEvent event = WorkflowEvent.builder()
+                .eventId(UUID.randomUUID().toString())
+                .eventType(eventType)
+                .workflowId(task.getWorkflow().getId())
+                .taskId(task.getId())
+                .status(task.getWorkflow().getStatus())
+                .source("workflow-service")
+                .occurredAt(Instant.now())
+                .version(1)
+                .build();
 
-            if (allParentsCompleted && child.getStatus() == TaskStatus.PENDING) {
-                log.info("Activating child task {} because all parents of {} are COMPLETED",
-                        child.getId(), completedTask.getId());
-                child.setStatus(TaskStatus.READY);
-            }
+        eventProducer.publish(event);
+    }
+
+    private void emitWorkflowEventIfNeeded(
+            Workflow workflow,
+            WorkflowStatus previousStatus
+    ) {
+        if (workflow.getStatus() == previousStatus) return;
+
+        EventType type = null;
+
+        if (workflow.getStatus() == WorkflowStatus.COMPLETED) {
+            type = EventType.WORKFLOW_COMPLETED;
+        } else if (workflow.getStatus() == WorkflowStatus.FAILED) {
+            type = EventType.WORKFLOW_FAILED;
         }
-    }
 
-    @Override
-    public TaskResponse getTask(Long taskId) {
-        Task task = taskRepository.findById(taskId)
-                .orElseThrow(() -> new RuntimeException("Task with id " + taskId + " not found"));
+        if (type == null) return;
 
-        return TaskMapper.toResponse(task);
-    }
+        WorkflowEvent event = WorkflowEvent.builder()
+                .eventId(UUID.randomUUID().toString())
+                .eventType(type)
+                .workflowId(workflow.getId())
+                .status(workflow.getStatus())
+                .source("workflow-service")
+                .occurredAt(Instant.now())
+                .version(1)
+                .build();
 
-    @Override
-    public Long getWorkflowId(Long taskId) {
-        Task task = taskRepository.findById(taskId)
-                .orElseThrow(() -> new RuntimeException("Task not found"));
-
-        return task.getWorkflow().getId();
+        eventProducer.publish(event);
     }
 }
