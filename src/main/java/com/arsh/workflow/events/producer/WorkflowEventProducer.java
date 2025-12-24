@@ -1,32 +1,18 @@
 package com.arsh.workflow.events.producer;
 
 import com.arsh.workflow.events.WorkflowEvent;
-import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 
-@Slf4j
-@Service
+@Component
+@RequiredArgsConstructor
 public class WorkflowEventProducer {
 
+    private final KafkaTemplate<Long, WorkflowEvent> kafkaTemplate;
     private static final String TOPIC = "workflow-events";
 
-    private final KafkaTemplate<Long, WorkflowEvent> kafkaTemplate;
-
-    public WorkflowEventProducer(KafkaTemplate<Long, WorkflowEvent> kafkaTemplate) {
-        this.kafkaTemplate = kafkaTemplate;
-    }
-
-    public void publish(WorkflowEvent event) {
-        try {
-            kafkaTemplate.send(
-                    TOPIC,
-                    event.getWorkflowId(), // partition key
-                    event
-            );
-        } catch (Exception e) {
-            log.error("Failed to publish workflow event: {}", event, e);
-            throw e;
-        }
+    public void publish(Long workflowId, WorkflowEvent event) {
+        kafkaTemplate.send(TOPIC, workflowId, event);
     }
 }
