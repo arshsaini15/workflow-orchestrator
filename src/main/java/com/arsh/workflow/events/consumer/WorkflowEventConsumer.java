@@ -5,6 +5,7 @@ import com.arsh.workflow.events.WorkflowEvent;
 import com.arsh.workflow.events.idempotency.ProcessedEvent;
 import com.arsh.workflow.repository.ProcessedEventRepository;
 import com.arsh.workflow.service.WorkflowCoordinator;
+import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -22,10 +23,13 @@ public class WorkflowEventConsumer {
             topics = "workflow-events",
             groupId = "workflow-executor-consumer"
     )
+    @Transactional
     public void consume(WorkflowEvent event) {
 
-        log.info("Processing event {} for task {}",
-                event.getEventType(), event.getTaskId());
+        if (processedEventRepository.existsById(event.getEventId())) {
+            log.warn("Duplicate event ignored {}", event.getEventId());
+            return;
+        }
 
         switch (event.getEventType()) {
 
