@@ -225,6 +225,6 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
                 .version(1)
                 .build();
 
-        eventProducer.publish(event);
+        eventProducer.publish(workflow.getId(), event);
     }
 }
