@@ -43,37 +43,4 @@ public class WorkflowController {
     public WorkflowResponse startWorkflow(@PathVariable Long workflowId) {
         return workflowService.startWorkflow(workflowId);
     }
-
-    @PostMapping("/complete/{workflowId}")
-    public WorkflowResponse completeWorkflow(@PathVariable Long workflowId) {
-        return workflowService.completeWorkflow(workflowId);
-    }
-
-    @GetMapping
-    public PaginatedResponse<WorkflowResponse> getAllWorkflows(
-            @RequestParam(required = false) WorkflowStatus status,
-            @RequestParam(required = false) String createdBy,
-            @RequestParam(required = false) String search,
-            Pageable pageable
-    ) {
-        return workflowService.getAllWorkflows(status, createdBy, search, pageable);
-    }
-
-    @DeleteMapping("/{workflowId}/delete/{taskId}")
-    public TaskResponse deleteTask(
-            @PathVariable Long workflowId,
-            @PathVariable Long taskId
-    ) {
-        return workflowService.deleteTask(workflowId, taskId);
-    }
-
-    @GetMapping("/{workflowId}/tasks")
-    public PaginatedResponse<TaskResponse> getTasksForWorkflow(
-            @PathVariable Long workflowId,
-            @RequestParam(required = false) TaskStatus status,
-            @RequestParam(required = false) String search,
-            Pageable pageable
-    ) {
-        return workflowService.getTasksForWorkflow(workflowId, status, search, pageable);
-    }
 }
