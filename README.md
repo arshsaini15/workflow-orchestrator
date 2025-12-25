@@ -1,47 +1,43 @@
 Workflow Orchestrator – Backend Distributed Task Engine
 
-A backend workflow orchestration system designed to execute tasks based on DAG (Directed Acyclic Graph) dependencies with support for concurrency, retries, and fault tolerance.
+A backend workflow orchestration system designed to execute tasks based on DAG (Directed Acyclic Graph) dependencies, with support for concurrent execution, retries, and fault tolerance in a distributed environment.
 
 🚀 Key Features
 
-Executes workflows where tasks depend on one another using DAG-based scheduling
+Executes workflows with interdependent tasks using DAG-based scheduling to enforce execution order
 
-Asynchronous task execution with configurable thread pools
+Asynchronous task execution using configurable, bounded thread pools
 
 Robust task lifecycle management (READY, IN_PROGRESS, COMPLETED, FAILED)
 
-Redis-based distributed locking to avoid duplicate task execution in concurrent environments
+Redis-based distributed locking and idempotency to prevent duplicate task execution across concurrent or multi-instance deployments
 
-Retry mechanism with exponential backoff for failed tasks
+Retry mechanism with exponential backoff for fault-tolerant task execution
 
-Pagination, sorting, and filtering APIs for workflows and tasks
+Event-driven state propagation using Kafka to decouple task execution from workflow state tracking and downstream consumers
 
-Event-driven architecture planned using Kafka for real-time task state tracking
+REST APIs supporting pagination, sorting, and filtering for workflows and tasks
 
 🛠 Tech Stack
 
 Backend: Java, Spring Boot
 
-Data Store: MySQL
+Database: MySQL
 
-Caching & Locks: Redis
+Distributed Locking & Idempotency: Redis
 
-Messaging (Planned): Kafka
+Messaging: Kafka
 
 Build Tool: Maven
 
 🧠 System Design Concepts Used
 
-Distributed locking
+Distributed locking and idempotent processing
 
-Thread pools and concurrency control
+Bounded thread pools and concurrency control
 
-State machines
+Task lifecycle state machines
 
-Fault tolerance and retries
+Fault tolerance with retries and backoff
 
-Event-driven architecture (in progress)
-
-📌 Current Status
-
-Kafka integration is in progress. Core workflow execution engine is complete and functional.
+Event-driven architecture using Kafka
