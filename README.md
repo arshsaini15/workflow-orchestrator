@@ -42,30 +42,3 @@ Fault tolerance with retries and exponential backoff
 
 Event-driven architecture using Kafka
 
-**📐 Architecture Overview**
-
-Client
-  |
-  | REST API
-  v
-Workflow Controller
-  |
-  v
-Workflow Engine
-  |
-  |---> Redis (Distributed Locks + Idempotency)
-  |
-  |---> MySQL (Workflow & Task State)
-  |
-  |---> Thread Pool (Concurrent Task Execution)
-  |
-  |---> Kafka Producer (Task / Workflow Events)
-                  |
-                  v
-           Kafka Topic (workflow-events)
-                  |
-                  v
-           Kafka Consumer
-                  |
-                  v
-        State Tracking / Monitoring
