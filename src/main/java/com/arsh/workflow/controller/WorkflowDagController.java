@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/workflow")
+@RequestMapping("/api/workflow")
 public class WorkflowDagController {
 
     private final WorkflowDagService workflowDagService;
