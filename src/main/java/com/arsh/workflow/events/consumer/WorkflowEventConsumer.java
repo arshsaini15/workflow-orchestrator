@@ -1,6 +1,5 @@
 package com.arsh.workflow.events.consumer;
 
-
 import com.arsh.workflow.events.WorkflowEvent;
 import com.arsh.workflow.events.idempotency.ProcessedEvent;
 import com.arsh.workflow.repository.ProcessedEventRepository;
@@ -25,6 +24,8 @@ public class WorkflowEventConsumer {
     )
     @Transactional
     public void consume(WorkflowEvent event) {
+
+        log.info("Consumed workflow event: {}", event);
 
         if (processedEventRepository.existsById(event.getEventId())) {
             log.warn("Duplicate event ignored {}", event.getEventId());

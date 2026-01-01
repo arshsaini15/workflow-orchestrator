@@ -8,6 +8,7 @@ import com.arsh.workflow.model.Workflow;
 import com.arsh.workflow.repository.TaskRepository;
 import com.arsh.workflow.repository.WorkflowRepository;
 import com.arsh.workflow.service.WorkflowCoordinator;
+import com.arsh.workflow.service.WorkflowExecutorService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -19,46 +20,33 @@ import java.util.List;
 public class WorkflowCoordinatorImpl implements WorkflowCoordinator {
 
     private final TaskRepository taskRepository;
-    private final WorkflowRepository workflowRepository;
+    private final WorkflowExecutorService workflowExecutorService;
 
     @Override
     @Transactional
     public void onTaskCompleted(Long taskId) {
 
         Task completedTask = taskRepository.findById(taskId)
-                .orElseThrow(() ->
-                        new TaskNotFoundException("Task not found: " + taskId));
+                .orElseThrow(() -> new TaskNotFoundException("Task not found"));
 
         Workflow workflow = completedTask.getWorkflow();
 
-        // 1️⃣ Unlock dependent tasks
+        // unlock dependent tasks
         for (Task candidate : workflow.getTasks()) {
 
-            if (candidate.getStatus() != TaskStatus.PENDING) {
-                continue;
-            }
+            if (candidate.getStatus() != TaskStatus.PENDING) continue;
 
-            boolean allParentsDone = candidate.getDependsOn()
+            boolean ready = candidate.getDependsOn()
                     .stream()
-                    .allMatch(parent -> parent.getStatus() == TaskStatus.COMPLETED);
+                    .allMatch(t -> t.getStatus() == TaskStatus.COMPLETED);
 
-            if (allParentsDone) {
+            if (ready) {
                 candidate.setStatus(TaskStatus.READY);
             }
         }
 
-        // 2️⃣ Check workflow completion
-        boolean allCompleted = workflow.getTasks()
-                .stream()
-                .allMatch(t -> t.getStatus() == TaskStatus.COMPLETED);
-
-        if (allCompleted) {
-            workflow.setStatus(WorkflowStatus.COMPLETED);
-            return;
-        }
-
-        // 3️⃣ Otherwise workflow is running
-        workflow.setStatus(WorkflowStatus.RUNNING);
+        // hand control back to executor
+        workflowExecutorService.executeWorkflow(workflow.getId());
     }
 
     @Override
@@ -66,12 +54,10 @@ public class WorkflowCoordinatorImpl implements WorkflowCoordinator {
     public void onTaskFailed(Long taskId) {
 
         Task failedTask = taskRepository.findById(taskId)
-                .orElseThrow(() ->
-                        new TaskNotFoundException("Task not found: " + taskId));
+                .orElseThrow(() -> new TaskNotFoundException("Task not found"));
 
-        Workflow workflow = failedTask.getWorkflow();
-
-        // Simple rule for now: any failure fails workflow
-        workflow.setStatus(WorkflowStatus.FAILED);
+        workflowExecutorService.executeWorkflow(
+                failedTask.getWorkflow().getId()
+        );
     }
 }

@@ -2,49 +2,32 @@ package com.arsh.workflow.service.impl;
 
 import com.arsh.workflow.dto.request.CreateTaskRequest;
 import com.arsh.workflow.dto.request.CreateWorkflowRequest;
-import com.arsh.workflow.dto.response.PaginatedResponse;
 import com.arsh.workflow.dto.response.TaskResponse;
 import com.arsh.workflow.dto.response.WorkflowResponse;
 import com.arsh.workflow.enums.TaskStatus;
 import com.arsh.workflow.enums.WorkflowStatus;
 import com.arsh.workflow.exception.IllegalWorkflowOperationException;
 import com.arsh.workflow.exception.WorkflowNotFoundException;
-import com.arsh.workflow.mapper.PageMapper;
 import com.arsh.workflow.mapper.TaskMapper;
 import com.arsh.workflow.mapper.WorkflowMapper;
 import com.arsh.workflow.model.Task;
 import com.arsh.workflow.model.Workflow;
-import com.arsh.workflow.repository.TaskRepository;
 import com.arsh.workflow.repository.WorkflowRepository;
-import com.arsh.workflow.service.WorkflowExecutorService;
 import com.arsh.workflow.service.WorkflowService;
-import com.arsh.workflow.util.TaskSpecifications;
-import com.arsh.workflow.util.WorkflowSpecifications;
-import com.arsh.workflow.validation.WorkflowGraphValidator;
 import jakarta.transaction.Transactional;
-import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
-import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
 @Service
 public class WorkflowServiceImpl implements WorkflowService {
 
     private final WorkflowRepository workflowRepository;
-    private final WorkflowGraphValidator workflowGraphValidator;
 
     public WorkflowServiceImpl(
-            WorkflowRepository workflowRepository,
-            WorkflowGraphValidator workflowGraphValidator
+            WorkflowRepository workflowRepository
     ) {
         this.workflowRepository = workflowRepository;
-        this.workflowGraphValidator = workflowGraphValidator;
     }
 
     private String getCurrentUser() {
@@ -138,7 +121,6 @@ public class WorkflowServiceImpl implements WorkflowService {
             );
         }
 
-        // Only DAG sources are allowed to start
         workflow.getTasks().forEach(task -> {
             if (task.getDependsOn() == null || task.getDependsOn().isEmpty()) {
                 task.setStatus(TaskStatus.READY);
@@ -146,6 +128,7 @@ public class WorkflowServiceImpl implements WorkflowService {
         });
 
         workflow.setStatus(WorkflowStatus.READY);
+
         return WorkflowMapper.toResponse(workflow);
     }
 

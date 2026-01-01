@@ -74,6 +74,12 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
                     wf.setStatus(WorkflowStatus.RUNNING);
                     workflowRepository.save(wf);
 
+                    log.info(
+                            "WORKFLOW STARTED | workflowId={} | totalTasks={}",
+                            wf.getId(),
+                            wf.getTasks().size()
+                    );
+
                     emitWorkflowStartedEvent(wf);
                 }
             }
@@ -185,6 +191,8 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
 
             redisDistributedLock.markExecuted(doneKey, EXECUTION_TTL);
 
+            checkAndCompleteWorkflow(task.getWorkflow().getId());
+
             triggerNextTasks(task.getWorkflow().getId());
 
             log.info("Task {} completed on attempt {}", taskId, attempt);
@@ -220,6 +228,48 @@ public class WorkflowExecutorServiceImpl implements WorkflowExecutorService {
                 .eventType(EventType.WORKFLOW_STARTED)
                 .workflowId(workflow.getId())
                 .status(WorkflowStatus.RUNNING)
+                .source("workflow-service")
+                .occurredAt(Instant.now())
+                .version(1)
+                .build();
+
+        eventProducer.publish(workflow.getId(), event);
+    }
+
+    private void checkAndCompleteWorkflow(Long workflowId) {
+
+        List<Task> remaining =
+                taskRepository.findByWorkflowIdAndStatusNot(
+                        workflowId, TaskStatus.COMPLETED
+                );
+
+        if (remaining.isEmpty()) {
+
+            Workflow wf = workflowRepository.findById(workflowId)
+                    .orElseThrow();
+
+            if (wf.getStatus() != WorkflowStatus.COMPLETED) {
+
+                wf.setStatus(WorkflowStatus.COMPLETED);
+                workflowRepository.save(wf);
+
+                log.info(
+                        "WORKFLOW COMPLETED | workflowId={} | totalTasks={}",
+                        workflowId,
+                        wf.getTasks().size()
+                );
+
+                emitWorkflowCompletedEvent(wf);
+            }
+        }
+    }
+
+    private void emitWorkflowCompletedEvent(Workflow workflow) {
+        WorkflowEvent event = WorkflowEvent.builder()
+                .eventId(UUID.randomUUID().toString())
+                .eventType(EventType.WORKFLOW_COMPLETED)
+                .workflowId(workflow.getId())
+                .status(WorkflowStatus.COMPLETED)
                 .source("workflow-service")
                 .occurredAt(Instant.now())
                 .version(1)

@@ -1,7 +1,6 @@
 package com.arsh.workflow.service.impl;
 
 import com.arsh.workflow.dto.response.TaskResponse;
-import com.arsh.workflow.enums.EventType;
 import com.arsh.workflow.enums.TaskStatus;
 import com.arsh.workflow.events.WorkflowEvent;
 import com.arsh.workflow.events.WorkflowEventFactory;
@@ -13,15 +12,11 @@ import com.arsh.workflow.model.User;
 import com.arsh.workflow.repository.TaskRepository;
 import com.arsh.workflow.repository.UserRepository;
 import com.arsh.workflow.service.TaskService;
-import com.arsh.workflow.service.WorkflowCoordinator;
 import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-
-import java.time.Instant;
-import java.util.UUID;
 
 
 @Service
@@ -31,18 +26,15 @@ public class TaskServiceImpl implements TaskService {
     private final TaskRepository taskRepository;
     private final UserRepository userRepository;
     private final WorkflowEventProducer eventProducer;
-    private final WorkflowCoordinator workflowCoordinator;
 
     public TaskServiceImpl(
             TaskRepository taskRepository,
             UserRepository userRepository,
-            WorkflowEventProducer eventProducer,
-            WorkflowCoordinator workflowCoordinator
+            WorkflowEventProducer eventProducer
     ) {
         this.taskRepository = taskRepository;
         this.userRepository = userRepository;
         this.eventProducer = eventProducer;
-        this.workflowCoordinator = workflowCoordinator;
     }
 
 
@@ -103,7 +95,6 @@ public class TaskServiceImpl implements TaskService {
     }
 
 
-
     private void validateTransition(TaskStatus from, TaskStatus to) {
 
         if (from == TaskStatus.COMPLETED || from == TaskStatus.FAILED) {
@@ -152,33 +143,5 @@ public class TaskServiceImpl implements TaskService {
                     }
                 }
         );
-    }
-
-
-    private void emitTaskEvent(Task task, TaskStatus from, TaskStatus to) {
-
-        EventType eventType = null;
-
-        if (from == TaskStatus.READY && to == TaskStatus.IN_PROGRESS) {
-            eventType = EventType.TASK_STARTED;
-        } else if (from == TaskStatus.IN_PROGRESS && to == TaskStatus.COMPLETED) {
-            eventType = EventType.TASK_COMPLETED;
-        } else if (from == TaskStatus.IN_PROGRESS && to == TaskStatus.FAILED) {
-            eventType = EventType.TASK_FAILED;
-        }
-
-        if (eventType == null) return;
-
-        WorkflowEvent event = WorkflowEvent.builder()
-                .eventId(UUID.randomUUID().toString())
-                .eventType(eventType)
-                .workflowId(task.getWorkflow().getId())
-                .taskId(task.getId())
-                .source("workflow-service")
-                .occurredAt(Instant.now())
-                .version(1)
-                .build();
-
-        eventProducer.publish(task.getWorkflow().getId(), event);
     }
 }

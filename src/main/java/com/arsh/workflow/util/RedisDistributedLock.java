@@ -1,6 +1,7 @@
 package com.arsh.workflow.util;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
@@ -11,11 +12,11 @@ import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class RedisDistributedLock {
 
     private final StringRedisTemplate redisTemplate;
 
-    // Reuse compiled script, do NOT rebuild per request
     private static final DefaultRedisScript<Long> UNLOCK_SCRIPT = new DefaultRedisScript<>();
 
     static {
@@ -35,11 +36,20 @@ public class RedisDistributedLock {
     public String tryLock(String key, Duration ttl) {
         String token = UUID.randomUUID().toString();
 
+        log.info("TRY LOCK | key={} | ttl={} | thread={}",
+                key, ttl.toMillis(), Thread.currentThread().getName());
+
         Boolean success = redisTemplate
                 .opsForValue()
                 .setIfAbsent(key, token, ttl);
 
-        return Boolean.TRUE.equals(success) ? token : null;
+        if (Boolean.TRUE.equals(success)) {
+            log.info("LOCK ACQUIRED | key={} | token={}", key, token);
+            return token;
+        }
+
+        log.info("LOCK FAILED | key={} | another executor holds the lock", key);
+        return null;
     }
 
     /**
@@ -49,7 +59,9 @@ public class RedisDistributedLock {
         long start = System.currentTimeMillis();
 
         while (System.currentTimeMillis() - start < waitTimeoutMs) {
+
             String token = tryLock(key, ttl);
+
             if (token != null) {
                 return token;
             }
@@ -58,10 +70,12 @@ public class RedisDistributedLock {
                 Thread.sleep(retryMillis);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+                log.warn("LOCK INTERRUPTED | key={}", key);
                 return null;
             }
         }
 
+        log.warn("LOCK TIMEOUT | key={} | waited={}ms", key, waitTimeoutMs);
         return null;
     }
 
@@ -74,15 +88,25 @@ public class RedisDistributedLock {
                 Collections.singletonList(key),
                 token
         );
-        return Long.valueOf(1L).equals(result);
+
+        boolean success = Long.valueOf(1L).equals(result);
+
+        log.info("LOCK RELEASE | key={} | token={} | success={}",
+                key, token, success);
+
+        return success;
     }
 
     /**
      * Fast idempotency check (GET is faster than HASKEY).
      */
     public boolean isAlreadyExecuted(String key) {
-        String val = redisTemplate.opsForValue().get(key);
-        return val != null;
+        boolean executed = redisTemplate.opsForValue().get(key) != null;
+
+        log.info("IDEMPOTENCY CHECK | key={} | alreadyExecuted={}",
+                key, executed);
+
+        return executed;
     }
 
     /**
@@ -90,5 +114,8 @@ public class RedisDistributedLock {
      */
     public void markExecuted(String key, Duration ttl) {
         redisTemplate.opsForValue().set(key, "1", ttl);
+
+        log.info("IDEMPOTENCY MARKED | key={} | ttl={}ms",
+                key, ttl.toMillis());
     }
 }
