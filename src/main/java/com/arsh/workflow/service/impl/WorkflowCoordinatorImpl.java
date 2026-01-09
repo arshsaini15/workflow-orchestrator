@@ -6,17 +6,16 @@ import com.arsh.workflow.exception.TaskNotFoundException;
 import com.arsh.workflow.model.Task;
 import com.arsh.workflow.model.Workflow;
 import com.arsh.workflow.repository.TaskRepository;
-import com.arsh.workflow.repository.WorkflowRepository;
 import com.arsh.workflow.service.WorkflowCoordinator;
 import com.arsh.workflow.service.WorkflowExecutorService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-
-import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class WorkflowCoordinatorImpl implements WorkflowCoordinator {
 
     private final TaskRepository taskRepository;
@@ -31,7 +30,7 @@ public class WorkflowCoordinatorImpl implements WorkflowCoordinator {
 
         Workflow workflow = completedTask.getWorkflow();
 
-        // unlock dependent tasks
+        // 1. Unlock dependent tasks
         for (Task candidate : workflow.getTasks()) {
 
             if (candidate.getStatus() != TaskStatus.PENDING) continue;
@@ -42,10 +41,12 @@ public class WorkflowCoordinatorImpl implements WorkflowCoordinator {
 
             if (ready) {
                 candidate.setStatus(TaskStatus.READY);
+                log.info("Task {} unlocked (workflow={})",
+                        candidate.getId(), workflow.getId());
             }
         }
 
-        // hand control back to executor
+        checkAndCompleteWorkflow(workflow);
         workflowExecutorService.executeWorkflow(workflow.getId());
     }
 
@@ -59,5 +60,16 @@ public class WorkflowCoordinatorImpl implements WorkflowCoordinator {
         workflowExecutorService.executeWorkflow(
                 failedTask.getWorkflow().getId()
         );
+    }
+
+    private void checkAndCompleteWorkflow(Workflow workflow) {
+        boolean allCompleted = workflow.getTasks()
+                .stream()
+                .allMatch(t -> t.getStatus() == TaskStatus.COMPLETED);
+
+        if (allCompleted && workflow.getStatus() != WorkflowStatus.COMPLETED) {
+            workflow.setStatus(WorkflowStatus.COMPLETED);
+            log.info("WORKFLOW COMPLETED | workflowId={}", workflow.getId());
+        }
     }
 }
