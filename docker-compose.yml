@@ -1,6 +1,18 @@
 version: "3.8"
 
 services:
+
+  mysql:
+    image: mysql:8
+    container_name: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: Arshdeep@789
+      MYSQL_DATABASE: workflow
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
   kafka:
     image: confluentinc/cp-kafka:7.5.0
     container_name: kafka
@@ -36,5 +48,6 @@ services:
       - redis_data:/data
 
 volumes:
+  mysql_data:
   kafka_data:
   redis_data:
