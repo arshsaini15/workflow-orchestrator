@@ -15,11 +15,13 @@ import com.arsh.workflow.model.Workflow;
 import com.arsh.workflow.repository.WorkflowRepository;
 import com.arsh.workflow.service.WorkflowService;
 import jakarta.transaction.Transactional;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 @Service
+@Slf4j
 public class WorkflowServiceImpl implements WorkflowService {
 
     private final WorkflowRepository workflowRepository;
@@ -46,6 +48,9 @@ public class WorkflowServiceImpl implements WorkflowService {
         workflow.setStatus(WorkflowStatus.CREATED);
 
         workflowRepository.save(workflow);
+
+        log.info("Workflow Created");
+
         return WorkflowMapper.toResponse(workflow);
     }
 

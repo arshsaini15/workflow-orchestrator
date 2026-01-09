@@ -16,4 +16,6 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
     List<Task> findByWorkflowId(Long workflowId);
 
     List<Task> findByWorkflowIdAndStatusIn(Long workflowId, List<TaskStatus> pending);
+
+    List<Task> findByWorkflowIdAndStatusNot(Long workflowId, TaskStatus taskStatus);
 }
