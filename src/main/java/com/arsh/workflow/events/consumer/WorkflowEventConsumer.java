@@ -8,6 +8,7 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -23,7 +24,7 @@ public class WorkflowEventConsumer {
             groupId = "workflow-executor-consumer"
     )
     @Transactional
-    public void consume(WorkflowEvent event) {
+    public void consume(WorkflowEvent event, Acknowledgment ack) {
 
         log.info("Consumed workflow event: {}", event);
 
@@ -50,5 +51,7 @@ public class WorkflowEventConsumer {
         processedEventRepository.save(
                 new ProcessedEvent(event.getEventId())
         );
+
+        ack.acknowledge();
     }
 }
